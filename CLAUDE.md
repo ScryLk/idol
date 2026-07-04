@@ -31,6 +31,10 @@ pnpm db:seed                 # usuário teste (teste@idol.dev / idol-dev-123), 2
 
 pnpm --filter @idol/game dev     # cliente em http://localhost:5173 (host:true p/ aparelho físico)
 pnpm --filter @idol/editor dev   # editor em http://localhost:5174
+
+pnpm --filter @idol/game test:e2e   # E2E Playwright (builda + serve via vite preview)
+# Em ambiente com Chromium pré-instalado fora do cache do Playwright:
+#   PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium pnpm --filter @idol/game test:e2e
 ```
 
 Env: copie `.env.example` para `.env`. A API valida env com Zod no boot e falha rápido
@@ -70,12 +74,50 @@ Env: copie `.env.example` para `.env`. A API valida env com Zod no boot e falha 
 - **Roleta no servidor**: cada giro é persistido em `DribbleSpin` (antifraude/auditoria).
 - **Prisma 6** (estável) em vez do 7 recém-lançado.
 
+## Decisões de arquitetura (M1)
+
+- **Todo o pipeline do traço vive em `packages/shared`** (`geometry/` + `simulation/`), não no
+  Phaser: RDP → Catmull-Rom uniforme → reamostragem por comprimento de arco
+  (`buildTrajectory`), e a simulação (`simulateShot`) decide o resultado ANTES da animação.
+  O cliente só captura pointer e anima. Isso permite ao servidor revalidar lances no futuro.
+- **Parâmetros do traço** (`DEFAULT_TRAJECTORY_OPTIONS`): epsilon RDP 8, 12 samples/segmento,
+  reamostragem a cada 6 unidades. Velocidade da bola: 900 unidades/s (`BALL_SPEED`).
+- **Campo**: gol no TOPO; linha de gol `y=60`, boca do gol `x∈[260,460]` (`simulation/field.ts`).
+- **Ordem determinística de detecção** a cada passo da trajetória: 1) interceptação de defensor
+  (distância ≤ raio), 2) defesa do goleiro (dentro do raio E do arco angular), 3) cruzamento da
+  linha de gol (x interpolado; dentro da boca = gol, fora = fora), 4) saída lateral/fundo.
+  Trajetória que termina dentro do campo = `stopped` (bola dominada).
+- **Hot path sem alocação**: pontos crus do traço em `Float32Array` pré-alocado (2048) com
+  filtro de distância mínima de 4 unidades (suavização para dedo).
+- **Hook E2E**: `window.__IDOL_E2E__` expõe `{ready, shots, lastOutcome}`; o Playwright desenha
+  com eventos reais de mouse no canvas (mesmo caminho de input de touch).
+
+### Checklist de validação manual do traço em aparelho Android físico (obrigatório por marco)
+
+Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no aparelho
+(mesma rede Wi-Fi). Validar:
+
+- [ ] O traço começa ao tocar na bola (raio generoso de 110 unidades) e NÃO começa em toques
+      longe dela
+- [ ] Desenhar com o dedo produz curva suave, sem "dentes" (RDP + Catmull-Rom calibrados)
+- [ ] Nenhum scroll/zoom do browser durante o desenho (`touch-action: none`)
+- [ ] A bola percorre exatamente a curva desenhada em velocidade constante
+- [ ] Resultado idêntico ao desenhar o mesmo traço duas vezes (determinismo)
+- [ ] 60fps estáveis durante desenho e animação (DevTools remoto → Performance)
+- [ ] Sem safe area cortando HUD em aparelho com notch
+- [ ] Status: **pendente** — nenhum aparelho físico disponível neste ambiente; validar antes
+      de fechar o M1 em produto (a DoD automatizada — E2E Playwright — está verde)
+
 ## Estado dos marcos
 
 - ✅ **M0 — Fundação**: monorepo, docker-compose (postgres/redis/api/adminer), CI, fórmulas +
-  57 testes em shared (100% de cobertura), Prisma schema + migration `init` + seed
+  testes em shared (100% de cobertura), Prisma schema + migration `init` + seed
   (1 usuário, 20 níveis, 15 patrocinadores), scaffolds do game/editor.
-- ⬜ M1 núcleo do traço · M2 LevelRuntime + 10 níveis · M3 roleta · M4 meta-jogo · M5 editor ·
+- ✅ **M1 — Núcleo do traço**: geometria e simulação determinística em shared (93 testes,
+  100% de cobertura), cena Phaser com campo/bola/herói/2 defensores/goleiro, captura de
+  traço por pointer, 3 testes E2E Playwright (gol, defesa, interceptação + reinício) com
+  eventos reais de input. Pendência não-bloqueante: checklist manual em aparelho físico.
+- ⬜ M2 LevelRuntime + 10 níveis · M3 roleta · M4 meta-jogo · M5 editor ·
   M6 carreira/polimento · M7 Capacitor.
 
 ### Notas do M0
