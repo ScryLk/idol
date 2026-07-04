@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @idol/api db:generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests (com cobertura mínima de 90% em shared)
+        run: pnpm --filter @idol/shared test:coverage && pnpm --filter '!@idol/shared' test
+
+  # Integração (Postgres/Redis reais) e E2E Playwright entram nos marcos M1+.
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: idol
+          POSTGRES_PASSWORD: idol
+          POSTGRES_DB: idol
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U idol"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Migrate + seed contra Postgres real
+        env:
+          DATABASE_URL: postgresql://idol:idol@localhost:5432/idol
+        run: |
+          pnpm --filter @idol/api db:generate
+          pnpm --filter @idol/api db:migrate
+          pnpm --filter @idol/api db:seed
