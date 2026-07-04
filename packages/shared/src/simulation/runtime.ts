@@ -1,3 +1,4 @@
+import type { DribbleOutcome } from '../formulas/dribble.js';
 import { dist, type Point } from '../geometry/point.js';
 import type { LevelScript } from '../schemas/level.js';
 import { BALL_SPEED } from './field.js';
@@ -20,14 +21,16 @@ export const PASS_RECEIVE_RADIUS = 55;
 
 export type LevelPhase = 'ready' | 'complete' | 'failed';
 
-export type FailReason = 'intercepted' | 'saved' | 'out' | 'objective';
+export type FailReason = 'intercepted' | 'saved' | 'out' | 'objective' | 'dribble';
 
 export interface RuntimeState {
   phase: LevelPhase;
   touches: number;
   passes: number;
-  /** Dribles perfeitos — sempre 0 até a Roleta de Drible (M3). */
+  /** Dribles perfeitos concedidos pela roleta. */
   perfectDribbles: number;
+  /** Dribles bem-sucedidos no total (normais + perfeitos). */
+  dribbleSuccesses: number;
   rewinds: number;
   elapsed: number;
   ball: Point;
@@ -55,6 +58,8 @@ interface Snapshot {
   touches: number;
   passes: number;
   perfectDribbles: number;
+  dribbleSuccesses: number;
+  usedOpportunities: string[];
 }
 
 export interface ActorPositions {
@@ -75,6 +80,8 @@ export class LevelRuntime {
   private ball: Point;
   private controller = 'hero';
   private failReason: FailReason | null = null;
+  private dribbleSuccesses = 0;
+  private usedOpportunities = new Set<string>();
   private readonly snapshots: Snapshot[] = [];
 
   constructor(script: LevelScript) {
@@ -101,12 +108,49 @@ export class LevelRuntime {
       touches: this.touches,
       passes: this.passes,
       perfectDribbles: this.perfectDribbles,
+      dribbleSuccesses: this.dribbleSuccesses,
       rewinds: this.rewinds,
       elapsed: this.elapsed,
       ball: { ...this.ball },
       controller: this.controller,
       failReason: this.failReason,
     };
+  }
+
+  /**
+   * Oportunidade de drible acionável agora: nível em 'ready', bola dentro do
+   * raio de uma oportunidade ainda não usada. A ROLETA NÃO RODA AQUI — o
+   * sorteio é do servidor; o resultado volta via applyDribbleOutcome().
+   */
+  availableDribble(): LevelScript['dribbleOpportunities'][number] | null {
+    if (this.phase !== 'ready') return null;
+    for (const op of this.script.dribbleOpportunities) {
+      if (!this.usedOpportunities.has(op.id) && dist(this.ball, op.position) <= op.radius) {
+        return op;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Aplica o resultado da roleta (vindo do servidor ou do fallback local de
+   * dev) à oportunidade acionável. Sucesso/perfeito contam para objetivos;
+   * falha perde a bola (failReason 'dribble'). Snapshot antes, para rewind.
+   */
+  applyDribbleOutcome(opportunityId: string, outcome: DribbleOutcome): void {
+    const op = this.availableDribble();
+    if (!op || op.id !== opportunityId) {
+      throw new Error(`applyDribbleOutcome: oportunidade '${opportunityId}' não está acionável`);
+    }
+    this.snapshots.push(this.takeSnapshot());
+    this.usedOpportunities.add(opportunityId);
+    if (outcome === 'failure') {
+      this.phase = 'failed';
+      this.failReason = 'dribble';
+      return;
+    }
+    this.dribbleSuccesses += 1;
+    if (outcome === 'perfect') this.perfectDribbles += 1;
   }
 
   /** Posições de todos os atores no instante `time` (default: relógio atual). */
@@ -131,14 +175,7 @@ export class LevelRuntime {
       throw new Error(`executeTrace: nível não está em 'ready' (fase atual: ${this.phase})`);
     }
 
-    this.snapshots.push({
-      elapsed: this.elapsed,
-      ball: { ...this.ball },
-      controller: this.controller,
-      touches: this.touches,
-      passes: this.passes,
-      perfectDribbles: this.perfectDribbles,
-    });
+    this.snapshots.push(this.takeSnapshot());
 
     // O traço SEMPRE parte da bola atual — prepend se o desenho não começou nela.
     const first = raw[0];
@@ -217,10 +254,25 @@ export class LevelRuntime {
     this.touches = snap.touches;
     this.passes = snap.passes;
     this.perfectDribbles = snap.perfectDribbles;
+    this.dribbleSuccesses = snap.dribbleSuccesses;
+    this.usedOpportunities = new Set(snap.usedOpportunities);
     this.phase = 'ready';
     this.failReason = null;
     this.rewinds += 1;
     return true;
+  }
+
+  private takeSnapshot(): Snapshot {
+    return {
+      elapsed: this.elapsed,
+      ball: { ...this.ball },
+      controller: this.controller,
+      touches: this.touches,
+      passes: this.passes,
+      perfectDribbles: this.perfectDribbles,
+      dribbleSuccesses: this.dribbleSuccesses,
+      usedOpportunities: [...this.usedOpportunities],
+    };
   }
 
   /** 0 = não completou; 1 = completou; 2/3 conforme critérios do script. */
@@ -251,10 +303,7 @@ export class LevelRuntime {
       case 'goal_after_passes':
         return this.passes >= obj.minPasses;
       case 'goal_with_dribble':
-        return this.perfectDribbles + this.dribbleSuccesses >= obj.minDribbles;
+        return this.dribbleSuccesses >= obj.minDribbles;
     }
   }
-
-  /** Dribles bem-sucedidos (normais + perfeitos) — alimentado pela roleta no M3. */
-  private dribbleSuccesses = 0;
 }

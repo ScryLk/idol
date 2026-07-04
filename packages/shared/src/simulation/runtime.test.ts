@@ -258,6 +258,78 @@ describe('simulateShot com timeOffset e rotas (interceptação dinâmica)', () =
   });
 });
 
+describe('LevelRuntime — roleta de drible', () => {
+  const withDribble = makeScript({
+    objective: { type: 'goal_with_dribble', minDribbles: 1 },
+    dribbleOpportunities: [{ id: 'op-1', position: { x: 360, y: 700 }, radius: 70, defense: 30 }],
+    stars: {
+      two: { maxTouches: 3 },
+      three: { maxTouches: 2, minPerfectDribbles: 1, noRewind: true },
+    },
+  });
+
+  it('oportunidade só fica acionável com a bola dentro do raio', () => {
+    const rt = new LevelRuntime(withDribble);
+    expect(rt.availableDribble()).toBeNull();
+    rt.executeTrace([{ x: 360, y: 710 }]); // para a 10 unidades do centro
+    expect(rt.availableDribble()?.id).toBe('op-1');
+  });
+
+  it('sucesso conta para o objetivo; perfeito conta para as estrelas', () => {
+    const rt = new LevelRuntime(withDribble);
+    rt.executeTrace([{ x: 360, y: 710 }]);
+    rt.applyDribbleOutcome('op-1', 'perfect');
+    const s = rt.getState();
+    expect(s.dribbleSuccesses).toBe(1);
+    expect(s.perfectDribbles).toBe(1);
+    expect(s.phase).toBe('ready');
+    // oportunidade consumida: não aciona de novo
+    expect(rt.availableDribble()).toBeNull();
+    // gol agora cumpre o objetivo e o perfeito garante a 3ª estrela
+    const r = rt.executeTrace(cornerShot);
+    expect(r.phase).toBe('complete');
+    expect(rt.evaluateStars()).toBe(3);
+  });
+
+  it('gol sem drible falha o objetivo goal_with_dribble', () => {
+    const rt = new LevelRuntime(withDribble);
+    const r = rt.executeTrace(cornerShot);
+    expect(r.phase).toBe('failed');
+    expect(r.failReason).toBe('objective');
+  });
+
+  it('falha na roleta perde a bola e o rewind devolve a oportunidade', () => {
+    const rt = new LevelRuntime(withDribble);
+    rt.executeTrace([{ x: 360, y: 710 }]);
+    rt.applyDribbleOutcome('op-1', 'failure');
+    let s = rt.getState();
+    expect(s.phase).toBe('failed');
+    expect(s.failReason).toBe('dribble');
+
+    expect(rt.rewind()).toBe(true);
+    s = rt.getState();
+    expect(s.phase).toBe('ready');
+    expect(s.dribbleSuccesses).toBe(0);
+    expect(rt.availableDribble()?.id).toBe('op-1'); // devolvida pelo snapshot
+  });
+
+  it('rejeita acionamento fora de hora ou de oportunidade errada', () => {
+    const rt = new LevelRuntime(withDribble);
+    expect(() => rt.applyDribbleOutcome('op-1', 'success')).toThrow(/acionável/);
+    rt.executeTrace([{ x: 360, y: 710 }]);
+    expect(() => rt.applyDribbleOutcome('outra', 'success')).toThrow(/acionável/);
+  });
+
+  it('sucesso normal sem perfeito não dá a 3ª estrela (minPerfectDribbles)', () => {
+    const rt = new LevelRuntime(withDribble);
+    rt.executeTrace([{ x: 360, y: 710 }]);
+    rt.applyDribbleOutcome('op-1', 'success');
+    rt.executeTrace(cornerShot);
+    expect(rt.getState().phase).toBe('complete');
+    expect(rt.evaluateStars()).toBe(2);
+  });
+});
+
 describe('PASS_RECEIVE_RADIUS', () => {
   it('é um alvo generoso para toque (>= 44 unidades)', () => {
     expect(PASS_RECEIVE_RADIUS).toBeGreaterThanOrEqual(44);

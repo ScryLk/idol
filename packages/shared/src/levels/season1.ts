@@ -141,7 +141,10 @@ export const SEASON1_LEVELS: LevelScript[] = [
     },
     objective: { type: 'goal' },
     stars: { two: { maxTouches: 2 }, three: { maxTouches: 1, noRewind: true } },
-    dribbleOpportunities: [],
+    // parar a bola na meia-lua permite arriscar a roleta de drible (M3)
+    dribbleOpportunities: [
+      { id: 'drible-meia-lua', position: { x: 360, y: 700 }, radius: 70, defense: 30 },
+    ],
   },
 
   // 8 — pivô em movimento: passe no espaço para o atacante que infiltra.
