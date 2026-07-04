@@ -1,10 +1,16 @@
-import type { ShotResult } from '@idol/shared';
+import type { LevelPhase, ShotResult } from '@idol/shared';
 
-/** Hook de teste E2E: o Playwright lê o resultado do último chute daqui. */
+/** Hook de teste E2E: o Playwright lê o estado do nível daqui. */
 export interface E2EHook {
   ready: boolean;
   shots: number;
   lastOutcome: ShotResult['outcome'] | null;
+  level: number;
+  phase: LevelPhase;
+  touches: number;
+  passes: number;
+  rewinds: number;
+  stars: number;
 }
 
 declare global {
