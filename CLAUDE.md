@@ -92,6 +92,31 @@ Env: copie `.env.example` para `.env`. A API valida env com Zod no boot e falha 
 - **Hook E2E**: `window.__IDOL_E2E__` expõe `{ready, shots, lastOutcome}`; o Playwright desenha
   com eventos reais de mouse no canvas (mesmo caminho de input de touch).
 
+## Decisões de arquitetura (M2)
+
+- **`LevelRuntime` vive em `packages/shared`** e é a única autoridade de regras do nível
+  (fases de toque, passes, objetivos, estrelas, rewind). A `LevelScene` do Phaser apenas
+  captura o traço e ANIMA o `TouchOutcome` retornado.
+- **Relógio do nível**: o tempo só avança durante a simulação de um toque (congela na mira).
+  Rotas de atores (`positionOnRoute`, interpolação linear por waypoints com t crescente) usam
+  esse relógio; `simulateShot` ganhou `timeOffset` e a interceptação avalia onde o defensor
+  ESTARÁ em cada passo, não onde começou.
+- **Passe**: bola que para (`stopped`) a ≤ 55 unidades (`PASS_RECEIVE_RADIUS`) de um
+  companheiro — na posição dele NO INSTANTE da chegada — vira passe: `passes++`, o
+  controlador troca e a bola é domada no pé do recebedor. Parar longe de todos mantém a
+  posse no ponto de parada (toque livre).
+- **Objetivo não cumprido no gol** (ex.: `goal_after_passes` sem os passes) = falha com
+  `failReason: 'objective'` — o gol não "meio conta".
+- **Rewind com snapshot**: pilha de snapshots (elapsed, bola, controlador, contadores) tirada
+  antes de cada toque; rewind desfaz o último toque (inclusive após falha), proibido após
+  completar, e conta para o critério `noRewind` de estrelas.
+- **Estrelas**: 1 = completar; 2/3 se os critérios (`maxTouches`, `noRewind`,
+  `minPerfectDribbles`) do script forem cumpridos — avaliados pelo runtime, nunca pela cena.
+- **Níveis 1–10 feitos à mão** em `packages/shared/src/levels/season1.ts` com **teste de
+  solvabilidade**: cada nível tem uma solução scriptada que precisa completá-lo com 3
+  estrelas, senão o build quebra (`season1.test.ts`). O seed usa esses 10 e gera os 11–20.
+- **Seleção de nível no cliente**: `?level=N` (1–10); completar navega para o seguinte.
+
 ### Checklist de validação manual do traço em aparelho Android físico (obrigatório por marco)
 
 Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no aparelho
@@ -117,8 +142,12 @@ Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no a
   100% de cobertura), cena Phaser com campo/bola/herói/2 defensores/goleiro, captura de
   traço por pointer, 3 testes E2E Playwright (gol, defesa, interceptação + reinício) com
   eventos reais de input. Pendência não-bloqueante: checklist manual em aparelho físico.
-- ⬜ M2 LevelRuntime + 10 níveis · M3 roleta · M4 meta-jogo · M5 editor ·
-  M6 carreira/polimento · M7 Capacitor.
+- ✅ **M2 — LevelRuntime + 10 níveis**: runtime determinístico em shared (fases de toque,
+  passes, objetivos, avaliador de estrelas, rewind com snapshot, rotas temporizadas com
+  interceptação dinâmica), 10 níveis feitos à mão com teste de solvabilidade (126 testes,
+  ~99% de cobertura em shared), LevelScene interpretando LevelScript com HUD e botão de
+  rewind, 3 E2E (gol 3★ + navegação, interceptação + rewind, passe obrigatório).
+- ⬜ M3 roleta · M4 meta-jogo · M5 editor · M6 carreira/polimento · M7 Capacitor.
 
 ### Notas do M0
 
