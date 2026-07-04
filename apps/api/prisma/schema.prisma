@@ -1,0 +1,209 @@
+// IDOL — modelo de dados (adaptação da seção 19 do doc de engenharia reversa).
+// Regras que o schema encoda:
+//  - Carteira NUNCA tem saldo mutável: o saldo é a soma do ledger.
+//  - Fãs têm eventos auditáveis (FanEvent) + total denormalizado no perfil (piso 500 na aplicação).
+//  - Roleta roda no servidor: cada giro é logado (DribbleSpin) para antifraude.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  profile       PlayerProfile?
+  progress      LevelProgress[]
+  ledgerEntries LedgerEntry[]
+  fanEvents     FanEvent[]
+  contracts     Contract[]
+  dribbleSpins  DribbleSpin[]
+
+  @@map("users")
+}
+
+model PlayerProfile {
+  userId String @id @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  displayName String @map("display_name")
+
+  // Atributos de gameplay (entram nas fórmulas canônicas)
+  dribble Int @default(30)
+  passing Int @default(30)
+  finish  Int @default(30)
+  fatigue Int @default(0)
+
+  // Estado da roleta (persistente entre giros)
+  dribblePity  Int @default(0) @map("dribble_pity")
+  dribbleChain Int @default(0) @map("dribble_chain")
+
+  // Reputação (total denormalizado; fonte auditável = FanEvent; piso 500)
+  fans Int @default(500)
+
+  // Vidas com regeneração por timer (job BullMQ + cálculo lazy)
+  lives          Int      @default(5)
+  livesUpdatedAt DateTime @default(now()) @map("lives_updated_at")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("player_profiles")
+}
+
+model Level {
+  id         String @id @default(uuid())
+  season     Int
+  ordinal    Int
+  difficulty Int
+  name       String
+  // LevelScript validado pelo schema Zod de @idol/shared antes de persistir
+  scriptJson Json   @map("script_json")
+
+  progress LevelProgress[]
+
+  @@unique([season, ordinal])
+  @@map("levels")
+}
+
+model LevelProgress {
+  userId      String    @map("user_id")
+  levelId     String    @map("level_id")
+  stars       Int       @default(0)
+  bestScore   Int       @default(0) @map("best_score")
+  completedAt DateTime? @map("completed_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  level Level @relation(fields: [levelId], references: [id], onDelete: Cascade)
+
+  @@id([userId, levelId])
+  @@map("level_progress")
+}
+
+enum LedgerEntryType {
+  MATCH_REWARD
+  SPONSOR_PAYOUT
+  PURCHASE
+  ADJUSTMENT
+}
+
+/// Carteira: saldo = SUM(amount). Nunca atualizar saldo direto.
+model LedgerEntry {
+  id        String          @id @default(uuid())
+  userId    String          @map("user_id")
+  amount    Int
+  type      LedgerEntryType
+  reference String?
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("ledger_entries")
+}
+
+enum FanEventType {
+  MATCH_PERFORMANCE
+  DRIBBLE
+  SPONSOR_EFFECT
+  DECAY
+  ADJUSTMENT
+}
+
+model FanEvent {
+  id        String       @id @default(uuid())
+  userId    String       @map("user_id")
+  delta     Int
+  type      FanEventType
+  reference String?
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("fan_events")
+}
+
+enum SponsorArchetype {
+  AUTENTICO
+  EQUILIBRADO
+  MERCENARIO
+}
+
+enum FanTierId {
+  AMADOR
+  LOCAL
+  REGIONAL
+  NACIONAL
+  GLOBAL
+}
+
+model Sponsor {
+  id        String           @id @default(uuid())
+  name      String           @unique
+  archetype SponsorArchetype
+  /// Tier mínimo de fãs exigido para assinar
+  minTier   FanTierId        @map("min_tier")
+  /// Valores por partida — espelham as constantes canônicas de @idol/shared
+  fansPerMatch    Int @map("fans_per_match")
+  basePayPerMatch Int @map("base_pay_per_match")
+
+  contracts Contract[]
+
+  @@map("sponsors")
+}
+
+enum ContractStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model Contract {
+  id               String         @id @default(uuid())
+  userId           String         @map("user_id")
+  sponsorId        String         @map("sponsor_id")
+  status           ContractStatus @default(ACTIVE)
+  matchesRemaining Int            @default(10) @map("matches_remaining")
+  signedAt         DateTime       @default(now()) @map("signed_at")
+  endedAt          DateTime?      @map("ended_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sponsor Sponsor @relation(fields: [sponsorId], references: [id])
+
+  @@index([userId, status])
+  @@map("contracts")
+}
+
+enum DribbleOutcome {
+  PERFECT
+  SUCCESS
+  FAILURE
+}
+
+/// Log antifraude: todo giro da roleta acontece no servidor e fica registrado.
+model DribbleSpin {
+  id          String         @id @default(uuid())
+  userId      String         @map("user_id")
+  levelId     String?        @map("level_id")
+  outcome     DribbleOutcome
+  roll        Float
+  chance      Float
+  perfectZone Float          @map("perfect_zone")
+  fansAwarded Int            @map("fans_awarded")
+  pityBefore  Int            @map("pity_before")
+  chainBefore Int            @map("chain_before")
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("dribble_spins")
+}

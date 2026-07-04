@@ -1,0 +1,9 @@
+{
+  "extends": "@idol/config/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2022"],
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src", "prisma/seed.ts"]
+}
