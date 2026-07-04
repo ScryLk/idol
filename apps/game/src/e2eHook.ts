@@ -1,4 +1,4 @@
-import type { LevelPhase, ShotResult } from '@idol/shared';
+import type { DribbleOutcome, LevelPhase, ShotResult } from '@idol/shared';
 
 /** Hook de teste E2E: o Playwright lê o estado do nível daqui. */
 export interface E2EHook {
@@ -11,6 +11,10 @@ export interface E2EHook {
   passes: number;
   rewinds: number;
   stars: number;
+  dribbleAvailable: boolean;
+  lastDribble: DribbleOutcome | null;
+  perfectDribbles: number;
+  dribbleChain: number;
 }
 
 declare global {

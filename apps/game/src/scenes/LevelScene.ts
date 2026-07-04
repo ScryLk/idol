@@ -16,9 +16,11 @@ import {
   type Point,
   type TouchOutcome,
 } from '@idol/shared';
+import { DribbleClient, type DribbleSessionState } from '../dribble/DribbleClient.js';
+import { RouletteOverlay } from '../ui/RouletteOverlay.js';
 import '../e2eHook.js';
 
-type SceneState = 'aiming' | 'tracing' | 'animating' | 'between' | 'ended';
+type SceneState = 'aiming' | 'tracing' | 'animating' | 'roulette' | 'between' | 'ended';
 
 const TRACE_START_RADIUS = 110;
 const MIN_POINT_DISTANCE = 4;
@@ -30,6 +32,7 @@ const FAIL_LABEL: Record<string, string> = {
   saved: 'DEFENDEU O GOLEIRO',
   out: 'PRA FORA',
   objective: 'OBJETIVO NÃO CUMPRIDO',
+  dribble: 'PERDEU A BOLA NO DRIBLE',
 };
 
 /**
@@ -56,9 +59,15 @@ export class LevelScene extends Phaser.Scene {
   private subBanner!: Phaser.GameObjects.Text;
   private hud!: Phaser.GameObjects.Text;
   private rewindButton!: Phaser.GameObjects.Container;
+  private dribbleButton!: Phaser.GameObjects.Container;
 
   private touch: TouchOutcome | null = null;
   private traveled = 0;
+
+  private dribbleClient!: DribbleClient;
+  private roulette!: RouletteOverlay;
+  /** pity/cadeia da sessão do nível (o servidor é a fonte oficial no M4). */
+  private dribbleState: DribbleSessionState = { pity: 0, chain: 0 };
 
   constructor() {
     super('level');
@@ -109,6 +118,24 @@ export class LevelScene extends Phaser.Scene {
       .setDepth(10);
 
     this.rewindButton = this.makeButton(120, FIELD_HEIGHT - 56, '◀ REWIND', () => this.onRewind());
+    this.dribbleButton = this.makeButton(
+      FIELD_WIDTH - 120,
+      FIELD_HEIGHT - 56,
+      '⚡ DRIBLAR',
+      () => void this.onDribble(),
+    );
+    this.dribbleButton.setVisible(false);
+
+    const seedParam = params.get('seed');
+    this.dribbleClient = new DribbleClient({
+      ...(seedParam ? { seed: Number(seedParam) } : {}),
+      ...(import.meta.env['VITE_API_URL']
+        ? { apiUrl: import.meta.env['VITE_API_URL'] as string }
+        : {}),
+      ...(params.get('user') ? { userId: params.get('user') as string } : {}),
+    });
+    this.roulette = new RouletteOverlay(this);
+    this.dribbleState = { pity: 0, chain: 0 };
 
     this.input.on(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
     this.input.on(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
@@ -127,7 +154,66 @@ export class LevelScene extends Phaser.Scene {
       passes: 0,
       rewinds: 0,
       stars: 0,
+      dribbleAvailable: false,
+      lastDribble: null,
+      perfectDribbles: 0,
+      dribbleChain: 0,
     };
+    this.updateDribbleButton();
+  }
+
+  /** Mostra o DRIBLAR apenas quando há oportunidade acionável. */
+  private updateDribbleButton(): void {
+    const available = this.state === 'aiming' && this.runtime.availableDribble() !== null;
+    this.dribbleButton.setVisible(available);
+    const hook = window.__IDOL_E2E__;
+    if (hook) hook.dribbleAvailable = available;
+  }
+
+  private async onDribble(): Promise<void> {
+    if (this.state !== 'aiming') return;
+    const op = this.runtime.availableDribble();
+    if (!op) return;
+
+    this.state = 'roulette';
+    this.dribbleButton.setVisible(false);
+
+    const spin = await this.dribbleClient.spin(op.defense, this.dribbleState);
+    this.dribbleState = { pity: spin.pityAfter, chain: spin.chainAfter };
+    // regra aplicada ANTES da animação — a roleta visual só reproduz o sorteio
+    this.runtime.applyDribbleOutcome(op.id, spin.outcome);
+
+    this.roulette.show(spin, () => {
+      const s = this.runtime.getState();
+      if (s.phase === 'failed') {
+        this.banner.setText(FAIL_LABEL['dribble'] as string).setColor('#ff8a80');
+        this.subBanner.setText('Use o REWIND para tentar de novo');
+        this.state = 'between';
+      } else {
+        if (spin.fans > 0) {
+          this.banner
+            .setText(spin.outcome === 'perfect' ? 'PERFEITO!' : 'DRIBLOU!')
+            .setColor(spin.outcome === 'perfect' ? '#ffd740' : '#80d8ff');
+          this.subBanner.setText(`+${spin.fans} fãs`);
+          this.time.delayedCall(900, () => {
+            if (this.state === 'aiming') {
+              this.banner.setText('');
+              this.subBanner.setText('');
+            }
+          });
+        }
+        this.state = 'aiming';
+      }
+      this.refreshHud();
+      this.updateDribbleButton();
+      const hook = window.__IDOL_E2E__;
+      if (hook) {
+        hook.lastDribble = spin.outcome;
+        hook.perfectDribbles = s.perfectDribbles;
+        hook.dribbleChain = this.dribbleState.chain;
+        hook.phase = s.phase;
+      }
+    });
   }
 
   // ---------------------------------------------------------------- desenho
@@ -274,6 +360,7 @@ export class LevelScene extends Phaser.Scene {
     this.ball.setPosition(s.ball.x, s.ball.y);
     this.renderActors(s.elapsed);
     this.refreshHud();
+    this.updateDribbleButton();
     this.syncHook();
   }
 
@@ -360,6 +447,7 @@ export class LevelScene extends Phaser.Scene {
       this.state = 'aiming';
     }
 
+    this.updateDribbleButton();
     this.syncHook(touch);
   }
 
