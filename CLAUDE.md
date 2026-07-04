@@ -117,6 +117,30 @@ Env: copie `.env.example` para `.env`. A API valida env com Zod no boot e falha 
   estrelas, senão o build quebra (`season1.test.ts`). O seed usa esses 10 e gera os 11–20.
 - **Seleção de nível no cliente**: `?level=N` (1–10); completar navega para o seguinte.
 
+## Decisões de arquitetura (M3)
+
+- **O sorteio da roleta roda NO SERVIDOR** (`POST /gameplay/dribble`): `DribbleService` com
+  RNG injetável (seedável em teste), porta de persistência `DribbleRepo` (Prisma em produção,
+  memória em teste). Cada giro atualiza pity/cadeia/fãs do perfil numa transação, registra
+  `FanEvent` e loga `DribbleSpin` (antifraude/auditoria).
+- **DoD do M3**: `dribble.integration.test.ts` roda 10k giros com seed 2026 e prova
+  (a) igualdade EXATA giro a giro com a referência das fórmulas canônicas, (b) taxas de
+  sucesso/perfeito dentro de ±1.5pp das médias analíticas, (c) invariantes de pity (teto 20,
+  zera em sucesso) e cadeia ao longo de toda a sequência.
+- **Runtime**: `availableDribble()` (bola dentro do raio de oportunidade não usada, fase
+  'ready') e `applyDribbleOutcome()` (falha → `failReason 'dribble'`; sucesso conta para
+  `goal_with_dribble`; perfeito conta para `minPerfectDribbles`). Oportunidades consumidas
+  entram no snapshot — rewind as devolve.
+- **Cliente**: `DribbleClient` tenta o servidor (`VITE_API_URL` + `?user=`) e cai para um
+  fallback local com as MESMAS fórmulas de shared, RNG seedável via `?seed=` — só para
+  dev/E2E; nunca é fonte de verdade de economia. Seeds úteis (drible 50 vs defesa 30):
+  7 = perfeito, 1 = falha.
+- **Roleta visual** (`RouletteOverlay`): setores proporcionais à zona/chance REAIS do giro e a
+  roda para exatamente na rolagem sorteada — a animação nunca inventa resultado. Voltas e
+  velocidade crescem com a cadeia; Perfeito tem hit-stop + zoom de câmera.
+- Nível 7 ganhou a primeira oportunidade de drible (`drible-meia-lua`), opcional para o
+  objetivo mas útil para treinar o push-your-luck.
+
 ### Checklist de validação manual do traço em aparelho Android físico (obrigatório por marco)
 
 Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no aparelho
@@ -147,7 +171,12 @@ Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no a
   interceptação dinâmica), 10 níveis feitos à mão com teste de solvabilidade (126 testes,
   ~99% de cobertura em shared), LevelScene interpretando LevelScript com HUD e botão de
   rewind, 3 E2E (gol 3★ + navegação, interceptação + rewind, passe obrigatório).
-- ⬜ M3 roleta · M4 meta-jogo · M5 editor · M6 carreira/polimento · M7 Capacitor.
+- ✅ **M3 — Roleta de Drible**: sorteio no servidor com RNG seedável + persistência
+  transacional (perfil/FanEvent/DribbleSpin), teste de integração de 10k giros com seed
+  (igualdade exata + distribuição ±1.5pp + invariantes), roleta visual com setores reais,
+  velocidade por cadeia e hit-stop no Perfeito, integração completa no LevelRuntime com
+  rewind devolvendo a oportunidade. 5/5 E2E.
+- ⬜ M4 meta-jogo · M5 editor · M6 carreira/polimento · M7 Capacitor.
 
 ### Notas do M0
 
