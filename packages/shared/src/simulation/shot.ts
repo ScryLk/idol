@@ -6,6 +6,7 @@ import {
   GOAL_MOUTH_X_MAX,
   GOAL_MOUTH_X_MIN,
 } from './field.js';
+import { positionOnRoute, type TimedPoint } from './route.js';
 
 /**
  * Simulação determinística do chute: a bola percorre a trajetória reamostrada
@@ -22,6 +23,8 @@ export interface DefenderState {
   id: string;
   position: Point;
   interceptRadius: number;
+  /** Rota de movimento (waypoints temporizados desde o início do nível). */
+  route?: readonly TimedPoint[];
 }
 
 export interface GoalkeeperState {
@@ -55,6 +58,12 @@ export interface ShotWorld {
   goalkeeper?: GoalkeeperState;
   /** Velocidade da bola em unidades de campo por segundo. */
   speed: number;
+  /**
+   * Tempo decorrido do nível ANTES deste chute (segundos). Rotas de
+   * defensores são avaliadas em timeOffset + tempo de percurso da bola —
+   * a interceptação considera onde o defensor ESTARÁ, não onde começou.
+   */
+  timeOffset?: number;
 }
 
 function insideGoalMouth(x: number): boolean {
@@ -65,15 +74,17 @@ export function simulateShot(path: readonly Point[], world: ShotWorld): ShotResu
   if (path.length === 0) throw new RangeError('simulateShot: trajetória vazia');
   if (world.speed <= 0) throw new RangeError(`simulateShot: velocidade inválida (${world.speed})`);
 
+  const timeOffset = world.timeOffset ?? 0;
   let traveled = 0;
   for (let i = 0; i < path.length; i++) {
     const p = path[i] as Point;
     if (i > 0) traveled += dist(path[i - 1] as Point, p);
     const time = traveled / world.speed;
 
-    // 1. Interceptação
+    // 1. Interceptação (posição do defensor avaliada no instante do passo)
     for (const d of world.defenders) {
-      if (dist(p, d.position) <= d.interceptRadius) {
+      const defenderPos = positionOnRoute(d.route, timeOffset + time, d.position);
+      if (dist(p, defenderPos) <= d.interceptRadius) {
         return { outcome: 'intercepted', position: { ...p }, index: i, time, defenderId: d.id };
       }
     }
