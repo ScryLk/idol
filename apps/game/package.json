@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "eslint src",
+    "lint": "eslint src e2e",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@idol/shared": "workspace:*",
@@ -18,6 +19,7 @@
   },
   "devDependencies": {
     "@idol/config": "workspace:*",
+    "@playwright/test": "^1.55.0",
     "eslint": "^9.28.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",

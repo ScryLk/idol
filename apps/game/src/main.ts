@@ -1,9 +1,6 @@
 import Phaser from 'phaser';
-import { BootScene } from './scenes/BootScene.js';
-
-/** Resolução base portrait — requisito mobile-first do projeto. */
-export const GAME_WIDTH = 720;
-export const GAME_HEIGHT = 1280;
+import { FIELD_HEIGHT, FIELD_WIDTH } from '@idol/shared';
+import { PlayScene } from './scenes/PlayScene.js';
 
 new Phaser.Game({
   type: Phaser.AUTO,
@@ -12,8 +9,9 @@ new Phaser.Game({
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: GAME_WIDTH,
-    height: GAME_HEIGHT,
+    // Resolução base portrait — requisito mobile-first do projeto
+    width: FIELD_WIDTH,
+    height: FIELD_HEIGHT,
   },
-  scene: [BootScene],
+  scene: [PlayScene],
 });
