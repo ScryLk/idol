@@ -10,7 +10,9 @@ import {
   LevelRuntime,
   PASS_RECEIVE_RADIUS,
   SEASON1_LEVELS,
+  decodeLevelScript,
   getSeason1Level,
+  parseLevelScript,
   positionOnRoute,
   type LevelScript,
   type Point,
@@ -76,8 +78,7 @@ export class LevelScene extends Phaser.Scene {
 
   create(): void {
     const params = new URLSearchParams(window.location.search);
-    this.levelOrdinal = Math.max(1, Number(params.get('level') ?? '1') || 1);
-    this.script = getSeason1Level(this.levelOrdinal) ?? (SEASON1_LEVELS[0] as LevelScript);
+    this.script = this.resolveScript(params);
     this.levelOrdinal = this.script.metadata.ordinal;
     this.runtime = new LevelRuntime(this.script);
     this.state = 'aiming';
@@ -162,6 +163,26 @@ export class LevelScene extends Phaser.Scene {
       dribbleChain: 0,
     };
     this.updateDribbleButton();
+  }
+
+  /**
+   * Nível a carregar: `?level=custom` joga um nível vindo do EDITOR — payload
+   * base64url no hash da URL (ou localStorage 'idol:custom-level'), sempre
+   * validado pelo schema compartilhado. Senão, ?level=N da temporada 1.
+   */
+  private resolveScript(params: URLSearchParams): LevelScript {
+    if (params.get('level') === 'custom') {
+      try {
+        const hash = window.location.hash.replace(/^#/, '');
+        if (hash) return decodeLevelScript(hash);
+        const stored = window.localStorage.getItem('idol:custom-level');
+        if (stored) return parseLevelScript(JSON.parse(stored));
+      } catch {
+        // payload inválido → cai para o nível 1
+      }
+    }
+    const ordinal = Math.max(1, Number(params.get('level') ?? '1') || 1);
+    return getSeason1Level(ordinal) ?? (SEASON1_LEVELS[0] as LevelScript);
   }
 
   /** Mostra o DRIBLAR apenas quando há oportunidade acionável. */
