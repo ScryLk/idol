@@ -136,6 +136,11 @@ export class LevelRuntime {
    * Aplica o resultado da roleta (vindo do servidor ou do fallback local de
    * dev) à oportunidade acionável. Sucesso/perfeito contam para objetivos;
    * falha perde a bola (failReason 'dribble'). Snapshot antes, para rewind.
+   *
+   * Push-your-luck (seção 25.2 do doc): o PERFEITO concede um drible extra —
+   * a oportunidade NÃO é consumida e pode ser girada de novo (a cadeia cresce,
+   * a chance cai −12 por elo). Sucesso normal encerra a cadeia consumindo a
+   * oportunidade; falha consome e perde a bola.
    */
   applyDribbleOutcome(opportunityId: string, outcome: DribbleOutcome): void {
     const op = this.availableDribble();
@@ -143,7 +148,7 @@ export class LevelRuntime {
       throw new Error(`applyDribbleOutcome: oportunidade '${opportunityId}' não está acionável`);
     }
     this.snapshots.push(this.takeSnapshot());
-    this.usedOpportunities.add(opportunityId);
+    if (outcome !== 'perfect') this.usedOpportunities.add(opportunityId);
     if (outcome === 'failure') {
       this.phase = 'failed';
       this.failReason = 'dribble';

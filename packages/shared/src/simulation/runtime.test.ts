@@ -283,12 +283,44 @@ describe('LevelRuntime — roleta de drible', () => {
     expect(s.dribbleSuccesses).toBe(1);
     expect(s.perfectDribbles).toBe(1);
     expect(s.phase).toBe('ready');
-    // oportunidade consumida: não aciona de novo
-    expect(rt.availableDribble()).toBeNull();
     // gol agora cumpre o objetivo e o perfeito garante a 3ª estrela
     const r = rt.executeTrace(cornerShot);
     expect(r.phase).toBe('complete');
     expect(rt.evaluateStars()).toBe(3);
+  });
+
+  it('push-your-luck: perfeito NÃO consome a oportunidade (drible extra)', () => {
+    const rt = new LevelRuntime(withDribble);
+    rt.executeTrace([{ x: 360, y: 710 }]);
+
+    // 1º giro: perfeito → pode girar de novo na MESMA oportunidade
+    rt.applyDribbleOutcome('op-1', 'perfect');
+    expect(rt.availableDribble()?.id).toBe('op-1');
+
+    // 2º giro: outro perfeito → cadeia segue viva
+    rt.applyDribbleOutcome('op-1', 'perfect');
+    expect(rt.availableDribble()?.id).toBe('op-1');
+    expect(rt.getState().perfectDribbles).toBe(2);
+    expect(rt.getState().dribbleSuccesses).toBe(2);
+
+    // 3º giro: sucesso normal ENCERRA a cadeia consumindo a oportunidade
+    rt.applyDribbleOutcome('op-1', 'success');
+    expect(rt.availableDribble()).toBeNull();
+    expect(rt.getState().dribbleSuccesses).toBe(3);
+  });
+
+  it('push-your-luck: falha no meio da cadeia perde a bola e o rewind desfaz só o último giro', () => {
+    const rt = new LevelRuntime(withDribble);
+    rt.executeTrace([{ x: 360, y: 710 }]);
+    rt.applyDribbleOutcome('op-1', 'perfect');
+    rt.applyDribbleOutcome('op-1', 'failure');
+    expect(rt.getState().phase).toBe('failed');
+    expect(rt.getState().failReason).toBe('dribble');
+
+    // rewind desfaz a falha, preservando o perfeito anterior e a oportunidade viva
+    expect(rt.rewind()).toBe(true);
+    expect(rt.getState().perfectDribbles).toBe(1);
+    expect(rt.availableDribble()?.id).toBe('op-1');
   });
 
   it('gol sem drible falha o objetivo goal_with_dribble', () => {

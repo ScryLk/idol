@@ -58,7 +58,8 @@ test('drible PERFEITO estende a cadeia e conta para as estrelas', async ({ page 
   expect(hook?.perfectDribbles).toBe(1);
   expect(hook?.dribbleChain).toBe(1); // perfeito estende a cadeia
   expect(hook?.phase).toBe('ready');
-  expect(hook?.dribbleAvailable).toBe(false); // oportunidade consumida
+  // push-your-luck: o perfeito concede um drible EXTRA — oportunidade viva
+  expect(hook?.dribbleAvailable).toBe(true);
 
   // termina o lance: gol pela ala esquerda
   await drawTrace(page, [
