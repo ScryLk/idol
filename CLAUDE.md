@@ -203,6 +203,14 @@ Env: copie `.env.example` para `.env`. A API valida env com Zod no boot e falha 
 - **Game feel**: slow-motion (0.35×) + zoom 1.12 nos últimos ~160 u de um chute que VAI ser
   gol (o resultado já é conhecido antes da animação), shake de câmera na falha, rastro de
   partículas na bola e confete no gol (textura gerada em runtime).
+- **Arte procedural (upgrade pós-M7)**: tudo gerado em código, zero assets binários —
+  `gfx/stadium.ts` (arquibancada com torcida seedada, gol com rede e traves, marcações reais
+  de meio-campo, faixas de corte, arco do goleiro em degradê), `gfx/draw.ts` (fichas de
+  jogador com sombra/dois tons/brilho, círculos tracejados), `gfx/textures.ts` (bola com
+  gomos que GIRA ao rolar + sombra própria), traço com halo + seta na ponta, anéis dourados
+  pulsantes nas oportunidades de drible, botões arredondados com press-feedback
+  (`gfx/ui.ts`) e cards do mapa com cantos arredondados. REGRA: a geometria interativa
+  (centros/tamanhos de botões e cards) é ESTÁVEL — os E2E clicam por coordenada.
 - **Onboarding**: dicas fixas nos níveis 1–5 + demo de traço fantasma no primeiro acesso ao
   nível 1 (some no primeiro toque; flag `idol:onboarded`).
 - **Flake conhecida de E2E**: clique disparado no exato frame do shake de falha pode se

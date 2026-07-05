@@ -4,9 +4,6 @@ import {
   DEFAULT_TRAJECTORY_OPTIONS,
   FIELD_HEIGHT,
   FIELD_WIDTH,
-  GOAL_LINE_Y,
-  GOAL_MOUTH_X_MAX,
-  GOAL_MOUTH_X_MIN,
   LevelRuntime,
   PASS_RECEIVE_RADIUS,
   SEASON1_LEVELS,
@@ -22,6 +19,10 @@ import { apiClient } from '../api/ApiClient.js';
 import { sound } from '../audio/SoundService.js';
 import { platform } from '../platform/PlatformService.js';
 import { DribbleClient, type DribbleSessionState } from '../dribble/DribbleClient.js';
+import { drawDashedCircle, drawPlayerChip } from '../gfx/draw.js';
+import { drawKeeperArc, drawStadium } from '../gfx/stadium.js';
+import { ensureGameTextures } from '../gfx/textures.js';
+import { makeRoundedButton } from '../gfx/ui.js';
 import { heroColor, heroNumber } from './CustomizeScene.js';
 import { recordStars } from '../state/progressStore.js';
 import { RouletteOverlay } from '../ui/RouletteOverlay.js';
@@ -71,8 +72,8 @@ export class LevelScene extends Phaser.Scene {
   private readonly rawY = new Float32Array(MAX_RAW_POINTS);
   private rawCount = 0;
 
-  private ball!: Phaser.GameObjects.Arc;
-  private hero!: Phaser.GameObjects.Arc;
+  private ball!: Phaser.GameObjects.Image;
+  private ballShadow!: Phaser.GameObjects.Ellipse;
   private traceGfx!: Phaser.GameObjects.Graphics;
   private actorGfx!: Phaser.GameObjects.Graphics;
   private banner!: Phaser.GameObjects.Text;
@@ -112,26 +113,28 @@ export class LevelScene extends Phaser.Scene {
     this.actorGfx = this.add.graphics();
     this.traceGfx = this.add.graphics();
 
-    this.hero = this.add
-      .circle(this.script.hero.position.x, this.script.hero.position.y, 18, heroColor())
-      .setStrokeStyle(2, 0x0a3a6a);
+    // herói (ficha com a camisa customizada + número)
+    const heroGfx = this.add.graphics().setDepth(2);
+    drawPlayerChip(heroGfx, this.script.hero.position.x, this.script.hero.position.y, 18, {
+      base: heroColor(),
+    });
     this.add
       .text(this.script.hero.position.x, this.script.hero.position.y, String(heroNumber()), {
-        fontSize: '16px',
+        fontSize: '15px',
         fontStyle: 'bold',
         color: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 3,
       })
       .setOrigin(0.5)
-      .setDepth(2);
-    this.ball = this.add.circle(this.script.ball.x, this.script.ball.y, 12, 0xffffff);
-    this.ball.setStrokeStyle(2, 0x222222);
+      .setDepth(3);
 
-    // partículas (textura gerada — sem assets): rastro da bola + confete de gol
-    const sparkGfx = this.make.graphics({ x: 0, y: 0 }, false);
-    sparkGfx.fillStyle(0xffffff, 1);
-    sparkGfx.fillCircle(4, 4, 4);
-    sparkGfx.generateTexture('spark', 8, 8);
-    sparkGfx.destroy();
+    // bola com gomos + sombra própria (gira ao rolar)
+    this.ballShadow = this.add
+      .ellipse(this.script.ball.x + 3, this.script.ball.y + 7, 22, 10, 0x000000, 0.3)
+      .setDepth(3);
+    this.ball = this.add.image(this.script.ball.x, this.script.ball.y, 'ball').setDepth(4);
+
     this.trail = this.add.particles(0, 0, 'spark', {
       speed: 12,
       scale: { start: 0.7, end: 0 },
@@ -142,20 +145,28 @@ export class LevelScene extends Phaser.Scene {
       emitting: false,
     });
 
-    this.hud = this.add.text(20, 14, '', { fontSize: '26px', color: '#ffffff' }).setDepth(10);
+    this.hud = this.add
+      .text(20, 14, '', {
+        fontSize: '25px',
+        color: '#ffffff',
+        backgroundColor: 'rgba(10,14,18,0.45)',
+        padding: { x: 12, y: 8 },
+      })
+      .setDepth(10);
     this.banner = this.add
       .text(FIELD_WIDTH / 2, FIELD_HEIGHT / 2 - 60, '', {
-        fontSize: '60px',
+        fontSize: '62px',
         fontStyle: 'bold',
         color: '#ffffff',
         stroke: '#000000',
-        strokeThickness: 8,
+        strokeThickness: 10,
         align: 'center',
+        shadow: { offsetY: 5, color: '#000000', blur: 10, fill: true },
       })
       .setOrigin(0.5)
       .setDepth(10);
     this.subBanner = this.add
-      .text(FIELD_WIDTH / 2, FIELD_HEIGHT / 2 + 20, '', {
+      .text(FIELD_WIDTH / 2, FIELD_HEIGHT / 2 + 24, '', {
         fontSize: '30px',
         color: '#ffe082',
         stroke: '#000000',
@@ -354,33 +365,42 @@ export class LevelScene extends Phaser.Scene {
   // ---------------------------------------------------------------- desenho
 
   private drawField(): void {
-    const g = this.add.graphics();
-    for (let i = 0; i < 8; i++) {
-      g.fillStyle(i % 2 === 0 ? 0x2e7d32 : 0x1b5e20);
-      g.fillRect(0, i * (FIELD_HEIGHT / 8), FIELD_WIDTH, FIELD_HEIGHT / 8);
-    }
-    g.lineStyle(4, 0xffffff, 0.9);
-    g.lineBetween(0, GOAL_LINE_Y, FIELD_WIDTH, GOAL_LINE_Y);
-    g.fillStyle(0xeeeeee, 0.9);
-    g.fillRect(GOAL_MOUTH_X_MIN, GOAL_LINE_Y - 34, GOAL_MOUTH_X_MAX - GOAL_MOUTH_X_MIN, 34);
-    g.fillStyle(0x111111, 1);
-    g.fillRect(GOAL_MOUTH_X_MIN, GOAL_LINE_Y - 30, GOAL_MOUTH_X_MAX - GOAL_MOUTH_X_MIN, 26);
-    g.lineStyle(3, 0xffffff, 0.5);
-    g.strokeRect(160, GOAL_LINE_Y, 400, 220);
-    g.strokeCircle(FIELD_WIDTH / 2, 900, 100);
+    ensureGameTextures(this);
+    drawStadium(this);
 
-    // goleiro é estático: desenha uma vez
+    // goleiro é estático: arco em degradê + ficha, desenhados uma vez
+    const g = this.add.graphics();
     const gk = this.script.goalkeeper;
-    g.fillStyle(0xffee58, 0.15);
-    g.slice(
+    drawKeeperArc(
+      g,
       gk.position.x,
       gk.position.y,
       gk.arc.radius,
-      gk.arc.centerAngle - gk.arc.halfAngle,
-      gk.arc.centerAngle + gk.arc.halfAngle,
+      gk.arc.centerAngle,
+      gk.arc.halfAngle,
     );
-    g.fillPath();
-    this.add.circle(gk.position.x, gk.position.y, 16, 0xf9a825).setStrokeStyle(2, 0x6d4c00);
+    drawPlayerChip(g, gk.position.x, gk.position.y, 16, { base: 0xf9a825 });
+
+    // oportunidades de drible: anel dourado pulsante (informação de nível)
+    for (const op of this.script.dribbleOpportunities) {
+      const ring = this.add.graphics().setDepth(1);
+      drawDashedCircle(ring, 0, 0, op.radius, 0xffd740, 0.8, 3, 28);
+      ring.setPosition(op.position.x, op.position.y);
+      const bolt = this.add
+        .text(op.position.x, op.position.y, '⚡', { fontSize: '30px' })
+        .setOrigin(0.5)
+        .setAlpha(0.85)
+        .setDepth(1);
+      this.tweens.add({
+        targets: [ring, bolt],
+        alpha: 0.35,
+        scale: 0.92,
+        duration: 800,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
   }
 
   /** Redesenha defensores e companheiros nas posições do instante `time`. */
@@ -390,21 +410,25 @@ export class LevelScene extends Phaser.Scene {
 
     for (const d of this.script.defenders) {
       const pos = positionOnRoute(d.route, time, d.position);
-      g.fillStyle(0xff5252, 0.12);
+      g.fillStyle(0xef5350, 0.09);
       g.fillCircle(pos.x, pos.y, d.interceptRadius);
-      g.lineStyle(2, 0xff5252, 0.4);
-      g.strokeCircle(pos.x, pos.y, d.interceptRadius);
-      g.fillStyle(0xc62828, 1);
-      g.fillCircle(pos.x, pos.y, 16);
+      drawDashedCircle(g, pos.x, pos.y, d.interceptRadius, 0xef5350, 0.55, 2, 28);
+      drawPlayerChip(g, pos.x, pos.y, 16, { base: 0xc62828 });
     }
 
     for (const t of this.script.teammates) {
       const pos = positionOnRoute(t.route, time, t.position);
-      g.lineStyle(2, 0x64b5f6, 0.5);
-      g.strokeCircle(pos.x, pos.y, PASS_RECEIVE_RADIUS);
-      g.fillStyle(0x1565c0, 1);
-      g.fillCircle(pos.x, pos.y, 16);
+      g.fillStyle(0x64b5f6, 0.06);
+      g.fillCircle(pos.x, pos.y, PASS_RECEIVE_RADIUS);
+      drawDashedCircle(g, pos.x, pos.y, PASS_RECEIVE_RADIUS, 0x64b5f6, 0.5, 2, 28);
+      drawPlayerChip(g, pos.x, pos.y, 16, { base: 0x1565c0 });
     }
+  }
+
+  /** Reposiciona bola + sombra juntas (única forma de mover a bola). */
+  private placeBall(x: number, y: number): void {
+    this.ball.setPosition(x, y);
+    this.ballShadow.setPosition(x + 3, y + 7);
   }
 
   private makeButton(
@@ -413,29 +437,8 @@ export class LevelScene extends Phaser.Scene {
     label: string,
     onTap: () => void,
   ): Phaser.GameObjects.Container {
-    const w = 200;
-    const h = 64; // alvo de toque ≥ 44px
-    const bg = this.add.rectangle(0, 0, w, h, 0x263238, 0.85).setStrokeStyle(2, 0xffffff, 0.5);
-    const txt = this.add.text(0, 0, label, { fontSize: '26px', color: '#ffffff' }).setOrigin(0.5);
-    const c = this.add.container(cx, cy, [bg, txt]).setDepth(20).setSize(w, h);
-    c.setInteractive(
-      new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h),
-      Phaser.Geom.Rectangle.Contains,
-    );
-    c.on(
-      Phaser.Input.Events.POINTER_DOWN,
-      (
-        _pointer: Phaser.Input.Pointer,
-        _x: number,
-        _y: number,
-        event: Phaser.Types.Input.EventData,
-      ) => {
-        event.stopPropagation();
-        sound.click();
-        onTap();
-      },
-    );
-    return c;
+    // mesma área de toque de sempre (200×64); visual arredondado no gfx/ui
+    return makeRoundedButton(this, cx, cy, 200, 64, label, onTap);
   }
 
   // ------------------------------------------------------------------ input
@@ -496,7 +499,7 @@ export class LevelScene extends Phaser.Scene {
     this.banner.setText('');
     this.subBanner.setText('');
     const s = this.runtime.getState();
-    this.ball.setPosition(s.ball.x, s.ball.y);
+    this.placeBall(s.ball.x, s.ball.y);
     this.renderActors(s.elapsed);
     this.refreshHud();
     this.updateDribbleButton();
@@ -529,13 +532,35 @@ export class LevelScene extends Phaser.Scene {
   private redrawTrace(): void {
     const g = this.traceGfx;
     g.clear();
-    g.lineStyle(6, 0xffffff, 0.7);
-    g.beginPath();
-    g.moveTo(this.rawX[0] as number, this.rawY[0] as number);
-    for (let i = 1; i < this.rawCount; i++) {
-      g.lineTo(this.rawX[i] as number, this.rawY[i] as number);
+    if (this.rawCount < 2) return;
+
+    // passe duplo: halo largo translúcido + linha nítida por cima
+    for (const [width, alpha] of [
+      [16, 0.14],
+      [6, 0.85],
+    ] as Array<[number, number]>) {
+      g.lineStyle(width, 0xffffff, alpha);
+      g.beginPath();
+      g.moveTo(this.rawX[0] as number, this.rawY[0] as number);
+      for (let i = 1; i < this.rawCount; i++) {
+        g.lineTo(this.rawX[i] as number, this.rawY[i] as number);
+      }
+      g.strokePath();
     }
-    g.strokePath();
+
+    // seta na ponta, orientada pelo último segmento
+    const n = this.rawCount;
+    const tx = this.rawX[n - 1] as number;
+    const ty = this.rawY[n - 1] as number;
+    const angle = Math.atan2(ty - (this.rawY[n - 2] as number), tx - (this.rawX[n - 2] as number));
+    const size = 16;
+    g.fillStyle(0xffffff, 0.9);
+    g.beginPath();
+    g.moveTo(tx + Math.cos(angle) * size, ty + Math.sin(angle) * size);
+    g.lineTo(tx + Math.cos(angle + 2.5) * size, ty + Math.sin(angle + 2.5) * size);
+    g.lineTo(tx + Math.cos(angle - 2.5) * size, ty + Math.sin(angle - 2.5) * size);
+    g.closePath();
+    g.fillPath();
   }
 
   // -------------------------------------------------------------- animação
@@ -553,10 +578,12 @@ export class LevelScene extends Phaser.Scene {
     }
     const timeScale = this.slowmoActive ? SLOWMO_SCALE : 1;
 
-    this.traveled += (BALL_SPEED * delta * timeScale) / 1000;
+    const step = (BALL_SPEED * delta * timeScale) / 1000;
+    this.traveled += step;
     const index = Math.min(Math.floor(this.traveled / spacing), this.touch.shot.index);
     const p = this.touch.trajectory[index] as Point;
-    this.ball.setPosition(p.x, p.y);
+    this.placeBall(p.x, p.y);
+    this.ball.rotation += step / 12; // bola gira ao rolar (raio 12)
 
     // atores seguem suas rotas em sincronia com a bola
     this.renderActors(this.touch.startElapsed + this.traveled / BALL_SPEED);
@@ -575,7 +602,7 @@ export class LevelScene extends Phaser.Scene {
       this.slowmoActive = false;
       this.cameras.main.zoomTo(1, 220, 'Sine.easeIn');
     }
-    this.ball.setPosition(state.ball.x, state.ball.y);
+    this.placeBall(state.ball.x, state.ball.y);
     this.renderActors(state.elapsed);
     this.refreshHud();
 
