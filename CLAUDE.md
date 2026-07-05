@@ -219,6 +219,48 @@ Env: copie `.env.example` para `.env`. A API valida env com Zod no boot e falha 
 - [ ] Áudio só toca após o primeiro toque (sem warning de autoplay no console)
 - [ ] Status: **pendente em aparelho físico** — flows cobertos por E2E no desktop
 
+## Decisões de arquitetura (M7)
+
+- **Capacitor 7 embala o MESMO build do Vite** (`webDir: dist`, appId `dev.idol.game`).
+  Plataforma `android/` versionada; iOS preparado (mesma base — `cap add ios` quando houver Mac).
+- **`PlatformService`**: interface única com implementação Capacitor (plugins importados
+  dinamicamente só no nativo) e fallback web silencioso (Vibration API). O gameplay nunca
+  depende de plugin. Haptics ligados: gol (success), falha (error), drible perfeito (light).
+- **Back button Android**: em cena de nível volta ao mapa; no mapa, minimiza o app (nunca
+  fecha abrupto). **Deep link** `idol://play?level=N` (intent-filter no manifest +
+  `appUrlOpen` no serviço).
+- **Offline-tolerant**: gameplay já roda 100% local; partidas completadas sem rede entram na
+  fila FIFO `idol:pending-matches` (testada: ordem, parada na primeira falha, lixo ignorado)
+  e sincronizam no evento `online`/boot com sessão válida (`ApiClient.flushPending`).
+- **PWA (canal beta)**: vite-plugin-pwa com autoUpdate, manifest portrait pt-BR e precache
+  (~1.6MB) — E2E passam sobre o build com service worker.
+- **Ícones/splash**: gerados por canvas headless (`pnpm --filter @idol/game gen:icons`) em
+  `resources/` e `public/icons/`. `npx @capacitor/assets generate --android` deve rodar na
+  máquina local (o download do libvips/sharp é bloqueado pelo proxy deste sandbox).
+- **IAP**: costura `BillingService` stub mapeada, SEM integração (fora de escopo do MVP).
+
+### Build Android (requer Android SDK + JDK 17 locais)
+
+```bash
+pnpm --filter @idol/game gen:icons                       # regenera fontes de ícone
+npx @capacitor/assets generate --android --assetPath resources   # ícones nativos (local)
+pnpm build:android                                       # vite build + cap sync + gradlew bundleRelease
+# AAB assinado: configure em android/app/build.gradle um signingConfig apontando para o
+# keystore local (NUNCA commitar keystore/senhas; use variáveis de ambiente do Gradle).
+```
+
+### Checklist de publicação — Play Store
+
+- [ ] AAB de release assinado com keystore próprio (upload key) e Play App Signing ativado
+- [ ] `versionCode`/`versionName` em `android/app/build.gradle`
+- [ ] Política de privacidade publicada (URL) — o app cria conta por e-mail (LGPD)
+- [ ] Data Safety: coleta e-mail (autenticação) e progresso de jogo; sem venda de dados
+- [ ] Classificação etária (IARC): jogo de esporte, sem conteúdo sensível; declarar a roleta
+      de drible como mecânica de habilidade SEM compra (não é jogo de azar)
+- [ ] Screenshots portrait (mín. 2), ícone 512, feature graphic 1024×500
+- [ ] Teste interno → fechado → produção; validar fluxo completo offline (avião) no físico
+- [ ] Testar deep link `idol://play?level=3` e back button em aparelho físico
+
 ### Checklist de validação manual do traço em aparelho Android físico (obrigatório por marco)
 
 Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no aparelho
@@ -270,7 +312,16 @@ Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no a
   craque, onboarding (dicas 1–5 + demo no nível 1), áudio WebAudio procedural, game feel
   (slow-motion no gol, shake na falha, rastro + confete). 2 novos E2E de carreira;
   9 E2E game + 2 editor no total.
-- ⬜ M7 Capacitor (empacotamento mobile).
+- ✅ **M7 — Empacotamento mobile (Capacitor)**: plataforma Android gerada e sincronizada,
+  PlatformService (haptics no gol/falha/perfeito, status bar, splash, back button, deep link
+  idol://play), fila offline de partidas com testes e sync ao reconectar, PWA com service
+  worker (E2E verdes sobre o build final), ícones/splash gerados, scripts `build:android` e
+  checklist da Play Store. Pendente (exige máquina local): gradlew bundleRelease assinado e
+  validação no aparelho físico.
+
+**Todos os 8 marcos (M0–M7) implementados.** Pendências que exigem hardware/rede local:
+checklists de aparelho físico (M1/M6/M7), ícones nativos via @capacitor/assets e o AAB
+assinado. O doc `score-hero-engenharia-reversa.md` segue ausente do repositório.
 
 ### Notas do M0
 
