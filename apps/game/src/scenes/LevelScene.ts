@@ -20,6 +20,7 @@ import {
 } from '@idol/shared';
 import { apiClient } from '../api/ApiClient.js';
 import { sound } from '../audio/SoundService.js';
+import { platform } from '../platform/PlatformService.js';
 import { DribbleClient, type DribbleSessionState } from '../dribble/DribbleClient.js';
 import { heroColor, heroNumber } from './CustomizeScene.js';
 import { recordStars } from '../state/progressStore.js';
@@ -313,12 +314,17 @@ export class LevelScene extends Phaser.Scene {
       const s = this.runtime.getState();
       if (s.phase === 'failed') {
         sound.fail();
+        platform.vibrate('error'); // haptics: falha
+        platform.vibrate('error'); // haptics: falha
         this.cameras.main.shake(180, 0.006);
         this.banner.setText(FAIL_LABEL['dribble'] as string).setColor('#ff8a80');
         this.subBanner.setText('Use o REWIND para tentar de novo');
         this.state = 'between';
       } else {
-        if (spin.outcome === 'perfect') sound.perfect();
+        if (spin.outcome === 'perfect') {
+          sound.perfect();
+          platform.vibrate('light'); // haptics: drible perfeito
+        }
         if (spin.fans > 0) {
           this.banner
             .setText(spin.outcome === 'perfect' ? 'PERFEITO!' : 'DRIBLOU!')
@@ -576,6 +582,7 @@ export class LevelScene extends Phaser.Scene {
     if (touch.phase === 'complete') {
       const stars = this.runtime.evaluateStars();
       sound.goal();
+      platform.vibrate('success'); // haptics: gol
       this.add
         .particles(state.ball.x, state.ball.y, 'spark', {
           speed: { min: 120, max: 380 },

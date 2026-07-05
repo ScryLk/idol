@@ -1,3 +1,5 @@
+import { drainQueue, enqueueMatch } from './pendingQueue.js';
+
 /**
  * Cliente HTTP do meta-jogo. Em dev usa a sessão do usuário seed
  * (teste@idol.dev). Sem VITE_API_URL configurada, o meta fica offline e o
@@ -119,8 +121,31 @@ export class ApiClient {
     return this.post<{ contractId: string }>('/contracts', { sponsorId });
   }
 
-  completeMatch(rating: number, levelId?: string): Promise<unknown | null> {
-    return this.post('/gameplay/match', { rating, ...(levelId ? { levelId } : {}) });
+  /**
+   * Fecha a partida no servidor; sem rede/API a partida entra na fila de
+   * pendências (offline-tolerant) e é sincronizada em flushPending().
+   */
+  async completeMatch(rating: number, levelId?: string): Promise<unknown | null> {
+    const result = await this.post('/gameplay/match', {
+      rating,
+      ...(levelId ? { levelId } : {}),
+    });
+    if (result === null) {
+      enqueueMatch({ rating, ...(levelId ? { levelId } : {}), at: Date.now() });
+    }
+    return result;
+  }
+
+  /** Sincroniza a fila de partidas pendentes. Retorna quantas enviou. */
+  async flushPending(): Promise<number> {
+    if (!this.baseUrl || !this.token) return 0;
+    return drainQueue(async (m) => {
+      const res = await this.post('/gameplay/match', {
+        rating: m.rating,
+        ...(m.levelId ? { levelId: m.levelId } : {}),
+      });
+      return res !== null;
+    });
   }
 }
 

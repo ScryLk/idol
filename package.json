@@ -13,6 +13,7 @@
     "test:coverage": "pnpm -r test:coverage",
     "db:migrate": "pnpm --filter @idol/api db:migrate",
     "db:seed": "pnpm --filter @idol/api db:seed",
+    "build:android": "pnpm --filter @idol/game build:android",
     "prepare": "husky"
   },
   "devDependencies": {
