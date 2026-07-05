@@ -5,9 +5,9 @@ chutes, arrisca dribles numa roleta push-your-luck e converte desempenho em **f�
 que desbloqueia e multiplica **patrocínios**, alguns dos quais pagam mais em troca da própria
 torcida.
 
-**Fonte de verdade**: `idol-prompt-desenvolvimento.md` (prompt de desenvolvimento). O documento
-`score-hero-engenharia-reversa.md` referenciado pelo prompt **não está presente no repositório**
-— quando houver conflito ou lacuna, o prompt vence e as decisões tomadas ficam registradas aqui.
+**Fonte de verdade**: `idol-prompt-desenvolvimento.md` (prompt de desenvolvimento) +
+`score-hero-engenharia-reversa.md` (referência completa; adicionado após o M7). Em conflito,
+o prompt vence. A análise de conformidade com o doc está na seção homônima abaixo.
 
 ## Stack
 
@@ -321,7 +321,44 @@ Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no a
 
 **Todos os 8 marcos (M0–M7) implementados.** Pendências que exigem hardware/rede local:
 checklists de aparelho físico (M1/M6/M7), ícones nativos via @capacitor/assets e o AAB
-assinado. O doc `score-hero-engenharia-reversa.md` segue ausente do repositório.
+assinado.
+
+## Conformidade com o score-hero-engenharia-reversa.md (revisão pós-M7)
+
+### Conforme (verificado contra as seções 16–19 e 25)
+
+- **§25.1 Fãs**: tiers e multiplicadores exatos (0/10k/30k/80k/200k → x1/x1.5/x2/x3/x5), fãs
+  nunca gastos, piso de 500. ✔
+- **§25.2 Roleta**: fórmula de chance idêntica; zona perfeita ≈25% da fatia (cresce com o
+  atributo); pity +5 teto 20; cadeia −12/elo com multiplicador +0.5×; roleta mais rápida por
+  elo; hit-stop + zoom no perfeito; **perfeito concede drible extra** (push-your-luck —
+  corrigido nesta revisão: antes a oportunidade era consumida em qualquer resultado);
+  sucesso normal encerra a cadeia; falha perde a bola. ✔
+- **§25.3 Patrocínios**: valores exatos dos 3 arquétipos, pagamento × tier, 10 partidas,
+  slots 1→3. ✔
+- **§18.3/18.5/18.7/18.9**: regen de vidas 1/30min teto 5 persistindo offline; estrelas como
+  máximo histórico; gates por total de estrelas; determinismo total fora da roleta. ✔
+- **§19**: `currency_ledger` como fonte de verdade da moeda (nunca saldo mutável);
+  `script_json` em levels; level_progress/lives/users/heroes(≈player_profiles) mapeados. ✔
+- **§10**: IA paramétrica e determinística (raios, arcos, rotas com waypoints), sem
+  pathfinding em runtime; recepção com raio de tolerância ("aim assist" = 55u). ✔
+- **§16.2**: loop do lance (pausa → desenho → simulação → próxima fase) e snapshot/rewind. ✔
+
+### Divergências conhecidas (deliberadas ou backlog)
+
+- **§18.2 vida por falha**: no doc a vida é consumida ao FALHAR sem rewind; aqui é consumida
+  ao completar partida (`/gameplay/match`) — decisão do M4, rewind é grátis e custa estrela
+  (`noRewind`). Alinhar quando a economia de rewind pago (§18.4, custo progressivo) entrar.
+- **§18.6 recompensa fracionada em replay** e moeda por estrelas: não implementado — dinheiro
+  vem só de patrocínios por ora.
+- **§25.1 decay de fãs** por sequência de más atuações: enum `DECAY` e fila BullMQ reservados,
+  regra não ativada.
+- **§25.4**: atributos compráveis, eventos semanais, replay/GIF, modo treino, acessibilidade
+  da roleta (padrões além de cor), LiveOps remoto: backlog pós-MVP.
+- **§19 tabelas** cosmetics/achievements/transfers/purchases/career_stats: fora do MVP
+  (transferências/customização são locais e cosméticas por enquanto).
+- **§2.2 tipos de toque aéreos** (lançamento alto, cabeceio, voleio) e impedimento (§2.7):
+  o contexto 2D top-down do prompt não modela altura; backlog de design.
 
 ### Notas do M0
 
