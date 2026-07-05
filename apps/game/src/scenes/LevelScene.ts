@@ -19,9 +19,25 @@ import {
   type TouchOutcome,
 } from '@idol/shared';
 import { apiClient } from '../api/ApiClient.js';
+import { sound } from '../audio/SoundService.js';
 import { DribbleClient, type DribbleSessionState } from '../dribble/DribbleClient.js';
+import { heroColor, heroNumber } from './CustomizeScene.js';
+import { recordStars } from '../state/progressStore.js';
 import { RouletteOverlay } from '../ui/RouletteOverlay.js';
 import '../e2eHook.js';
+
+/** Dicas de onboarding dos níveis-tutorial (1–5). */
+const TUTORIAL_HINTS: Record<number, string> = {
+  1: 'Arraste o dedo da bola até o gol para chutar',
+  2: 'O goleiro cobre o centro — mire nos cantos',
+  3: 'Curve o traço para desviar do zagueiro',
+  4: 'Passe pelo corredor e curve para o canto no fim',
+  5: 'Pare a bola no companheiro para dar um passe',
+};
+
+/** Fator de câmera lenta na reta final de um gol. */
+const SLOWMO_SCALE = 0.35;
+const SLOWMO_DISTANCE = 160;
 
 type SceneState = 'aiming' | 'tracing' | 'animating' | 'roulette' | 'between' | 'ended';
 
@@ -61,6 +77,7 @@ export class LevelScene extends Phaser.Scene {
   private banner!: Phaser.GameObjects.Text;
   private subBanner!: Phaser.GameObjects.Text;
   private hud!: Phaser.GameObjects.Text;
+  private hintText!: Phaser.GameObjects.Text;
   private rewindButton!: Phaser.GameObjects.Container;
   private dribbleButton!: Phaser.GameObjects.Container;
 
@@ -71,6 +88,10 @@ export class LevelScene extends Phaser.Scene {
   private roulette!: RouletteOverlay;
   /** pity/cadeia da sessão do nível (o servidor é a fonte oficial no M4). */
   private dribbleState: DribbleSessionState = { pity: 0, chain: 0 };
+
+  private trail!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private demoDot: Phaser.GameObjects.Arc | null = null;
+  private slowmoActive = false;
 
   constructor() {
     super('level');
@@ -91,10 +112,34 @@ export class LevelScene extends Phaser.Scene {
     this.traceGfx = this.add.graphics();
 
     this.hero = this.add
-      .circle(this.script.hero.position.x, this.script.hero.position.y, 18, 0x1976d2)
+      .circle(this.script.hero.position.x, this.script.hero.position.y, 18, heroColor())
       .setStrokeStyle(2, 0x0a3a6a);
+    this.add
+      .text(this.script.hero.position.x, this.script.hero.position.y, String(heroNumber()), {
+        fontSize: '16px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5)
+      .setDepth(2);
     this.ball = this.add.circle(this.script.ball.x, this.script.ball.y, 12, 0xffffff);
     this.ball.setStrokeStyle(2, 0x222222);
+
+    // partículas (textura gerada — sem assets): rastro da bola + confete de gol
+    const sparkGfx = this.make.graphics({ x: 0, y: 0 }, false);
+    sparkGfx.fillStyle(0xffffff, 1);
+    sparkGfx.fillCircle(4, 4, 4);
+    sparkGfx.generateTexture('spark', 8, 8);
+    sparkGfx.destroy();
+    this.trail = this.add.particles(0, 0, 'spark', {
+      speed: 12,
+      scale: { start: 0.7, end: 0 },
+      alpha: { start: 0.5, end: 0 },
+      lifespan: 320,
+      frequency: 24,
+      follow: this.ball,
+      emitting: false,
+    });
 
     this.hud = this.add.text(20, 14, '', { fontSize: '26px', color: '#ffffff' }).setDepth(10);
     this.banner = this.add
@@ -119,8 +164,35 @@ export class LevelScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(10);
 
+    this.hintText = this.add
+      .text(FIELD_WIDTH / 2, FIELD_HEIGHT - 130, '', {
+        fontSize: '26px',
+        color: '#d0f0d0',
+        stroke: '#000000',
+        strokeThickness: 4,
+        align: 'center',
+        wordWrap: { width: FIELD_WIDTH - 80 },
+      })
+      .setOrigin(0.5)
+      .setDepth(10);
+
     this.rewindButton = this.makeButton(120, FIELD_HEIGHT - 56, '◀ REWIND', () => this.onRewind());
     this.makeButton(FIELD_WIDTH - 110, 40, 'CARREIRA', () => this.scene.start('meta'));
+    this.makeButton(FIELD_WIDTH - 110, 116, '🗺 MAPA', () => {
+      window.location.href = window.location.pathname; // limpa query/hash → mapa
+    });
+
+    // onboarding: dica do tutorial (níveis 1–5) + demo animada no primeiro acesso
+    const hint = TUTORIAL_HINTS[this.levelOrdinal];
+    if (hint) this.hintText.setText(hint);
+    if (this.levelOrdinal === 1 && !window.localStorage.getItem('idol:onboarded')) {
+      this.startDemo();
+    }
+    this.input.once(Phaser.Input.Events.POINTER_DOWN, () => {
+      sound.unlock();
+      window.localStorage.setItem('idol:onboarded', '1');
+      this.stopDemo();
+    });
     this.dribbleButton = this.makeButton(
       FIELD_WIDTH - 120,
       FIELD_HEIGHT - 56,
@@ -185,6 +257,37 @@ export class LevelScene extends Phaser.Scene {
     return getSeason1Level(ordinal) ?? (SEASON1_LEVELS[0] as LevelScript);
   }
 
+  /** Demo do onboarding: um dedo-fantasma desenha o traço da bola ao gol. */
+  private startDemo(): void {
+    this.demoDot = this.add
+      .circle(this.script.ball.x, this.script.ball.y, 14, 0xffffff, 0.65)
+      .setDepth(15);
+    const path: Array<[number, number]> = [
+      [this.script.ball.x, this.script.ball.y],
+      [330, 700],
+      [300, 400],
+      [280, 120],
+    ];
+    const runDemo = (): void => {
+      if (!this.demoDot) return;
+      this.demoDot.setPosition(path[0]?.[0] ?? 0, path[0]?.[1] ?? 0);
+      const chain = this.tweens.chain({
+        targets: this.demoDot,
+        tweens: path.slice(1).map(([x, y]) => ({ x, y, duration: 500, ease: 'Sine.easeInOut' })),
+        onComplete: () => {
+          this.time.delayedCall(600, runDemo);
+        },
+      });
+      void chain;
+    };
+    runDemo();
+  }
+
+  private stopDemo(): void {
+    this.demoDot?.destroy();
+    this.demoDot = null;
+  }
+
   /** Mostra o DRIBLAR apenas quando há oportunidade acionável. */
   private updateDribbleButton(): void {
     const available = this.state === 'aiming' && this.runtime.availableDribble() !== null;
@@ -209,10 +312,13 @@ export class LevelScene extends Phaser.Scene {
     this.roulette.show(spin, () => {
       const s = this.runtime.getState();
       if (s.phase === 'failed') {
+        sound.fail();
+        this.cameras.main.shake(180, 0.006);
         this.banner.setText(FAIL_LABEL['dribble'] as string).setColor('#ff8a80');
         this.subBanner.setText('Use o REWIND para tentar de novo');
         this.state = 'between';
       } else {
+        if (spin.outcome === 'perfect') sound.perfect();
         if (spin.fans > 0) {
           this.banner
             .setText(spin.outcome === 'perfect' ? 'PERFEITO!' : 'DRIBLOU!')
@@ -313,12 +419,13 @@ export class LevelScene extends Phaser.Scene {
     c.on(
       Phaser.Input.Events.POINTER_DOWN,
       (
-        pointer: Phaser.Input.Pointer,
+        _pointer: Phaser.Input.Pointer,
         _x: number,
         _y: number,
         event: Phaser.Types.Input.EventData,
       ) => {
         event.stopPropagation();
+        sound.click();
         onTap();
       },
     );
@@ -369,6 +476,9 @@ export class LevelScene extends Phaser.Scene {
     this.touch = this.runtime.executeTrace(raw);
     this.traveled = 0;
     this.state = 'animating';
+    this.slowmoActive = false;
+    this.trail.start();
+    sound.kick();
   }
 
   private onRewind(): void {
@@ -427,8 +537,17 @@ export class LevelScene extends Phaser.Scene {
   override update(_time: number, delta: number): void {
     if (this.state !== 'animating' || !this.touch) return;
 
-    this.traveled += (BALL_SPEED * delta) / 1000;
+    // câmera lenta na reta final de um gol (game feel)
     const spacing = DEFAULT_TRAJECTORY_OPTIONS.spacing;
+    const remaining = this.touch.shot.index * spacing - this.traveled;
+    const isGoalFinish = this.touch.shot.outcome === 'goal' && remaining < SLOWMO_DISTANCE;
+    if (isGoalFinish && !this.slowmoActive) {
+      this.slowmoActive = true;
+      this.cameras.main.zoomTo(1.12, 180, 'Sine.easeOut');
+    }
+    const timeScale = this.slowmoActive ? SLOWMO_SCALE : 1;
+
+    this.traveled += (BALL_SPEED * delta * timeScale) / 1000;
     const index = Math.min(Math.floor(this.traveled / spacing), this.touch.shot.index);
     const p = this.touch.trajectory[index] as Point;
     this.ball.setPosition(p.x, p.y);
@@ -445,12 +564,29 @@ export class LevelScene extends Phaser.Scene {
     const touch = this.touch as TouchOutcome;
     const state = this.runtime.getState();
     this.traceGfx.clear();
+    this.trail.stop();
+    if (this.slowmoActive) {
+      this.slowmoActive = false;
+      this.cameras.main.zoomTo(1, 220, 'Sine.easeIn');
+    }
     this.ball.setPosition(state.ball.x, state.ball.y);
     this.renderActors(state.elapsed);
     this.refreshHud();
 
     if (touch.phase === 'complete') {
       const stars = this.runtime.evaluateStars();
+      sound.goal();
+      this.add
+        .particles(state.ball.x, state.ball.y, 'spark', {
+          speed: { min: 120, max: 380 },
+          scale: { start: 1.2, end: 0 },
+          tint: [0xffd740, 0x66bb6a, 0x80d8ff, 0xffffff],
+          lifespan: 900,
+          quantity: 60,
+          emitting: false,
+        })
+        .explode(60, state.ball.x, state.ball.y);
+      recordStars(this.levelOrdinal, stars);
       this.banner.setText('GOL!').setColor('#ffd740');
       this.subBanner.setText(
         `${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}\nToque para o próximo nível`,
@@ -463,11 +599,14 @@ export class LevelScene extends Phaser.Scene {
           .then((ok) => (ok ? apiClient.completeMatch(stars / 3) : null));
       }
     } else if (touch.phase === 'failed') {
+      sound.fail();
+      this.cameras.main.shake(180, 0.006);
       this.banner.setText(FAIL_LABEL[touch.failReason ?? 'out'] ?? 'FALHOU').setColor('#ff8a80');
       this.subBanner.setText('Use o REWIND para tentar de novo');
       this.state = 'between';
     } else {
       if (touch.passedTo) {
+        sound.pass();
         this.banner.setText('PASSE!').setColor('#80d8ff');
         this.time.delayedCall(600, () => {
           if (this.state === 'aiming') this.banner.setText('');
@@ -499,7 +638,7 @@ export class LevelScene extends Phaser.Scene {
     if (!hook) return;
     const s = this.runtime.getState();
     if (touch) {
-      hook.shots += 1;
+      hook.shots = (hook.shots ?? 0) + 1;
       hook.lastOutcome = touch.shot.outcome;
     }
     hook.phase = s.phase;

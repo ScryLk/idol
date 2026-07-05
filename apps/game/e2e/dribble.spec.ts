@@ -80,11 +80,16 @@ test('drible FALHO perde a bola; rewind devolve a oportunidade', async ({ page }
   });
   await page.waitForFunction(() => window.__IDOL_E2E__?.phase === 'failed');
 
-  // rewind: oportunidade volta a ficar acionável
+  // rewind: oportunidade volta a ficar acionável (retry contra o frame do shake)
   const rewind = await toPage(page, 120, FIELD_HEIGHT - 56);
-  await page.mouse.click(rewind.x, rewind.y);
-  await page.waitForFunction(
-    () => window.__IDOL_E2E__?.phase === 'ready' && window.__IDOL_E2E__?.dribbleAvailable === true,
-  );
+  await expect(async () => {
+    await page.mouse.click(rewind.x, rewind.y);
+    await page.waitForFunction(
+      () =>
+        window.__IDOL_E2E__?.phase === 'ready' && window.__IDOL_E2E__?.dribbleAvailable === true,
+      undefined,
+      { timeout: 1_000 },
+    );
+  }).toPass({ timeout: 15_000 });
   expect(await page.evaluate(() => window.__IDOL_E2E__?.rewinds)).toBe(1);
 });

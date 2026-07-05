@@ -78,10 +78,15 @@ test('nível 3: interceptação, rewind e gol na segunda tentativa', async ({ pa
   await waitPhase(page, 'failed', 1);
   expect(await page.evaluate(() => window.__IDOL_E2E__?.lastOutcome)).toBe('intercepted');
 
-  // botão REWIND (centro em 120, 1224)
+  // botão REWIND (centro em 120, 1224) — retry: o shake da câmera na falha
+  // pode engolir um clique disparado no exato frame do tremor
   const rewind = await toPage(page, 120, FIELD_HEIGHT - 56);
-  await page.mouse.click(rewind.x, rewind.y);
-  await page.waitForFunction(() => window.__IDOL_E2E__?.phase === 'ready');
+  await expect(async () => {
+    await page.mouse.click(rewind.x, rewind.y);
+    await page.waitForFunction(() => window.__IDOL_E2E__?.phase === 'ready', undefined, {
+      timeout: 1_000,
+    });
+  }).toPass({ timeout: 15_000 });
   expect(await page.evaluate(() => window.__IDOL_E2E__?.rewinds)).toBe(1);
   expect(await page.evaluate(() => window.__IDOL_E2E__?.touches)).toBe(0);
 
