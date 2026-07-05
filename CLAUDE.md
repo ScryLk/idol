@@ -185,6 +185,40 @@ Env: copie `.env.example` para `.env`. A API valida env com Zod no boot e falha 
   corre junto com um re-render pode se perder (padrão: interações E2E esperam o estado via
   `window.__IDOL_EDITOR__` antes do próximo clique).
 
+## Decisões de arquitetura (M6)
+
+- **Progresso local offline-first**: best-of de estrelas por nível em localStorage
+  (`progressStore`), sincronização com o servidor via fila de pendências fica para o M7.
+- **Gates de estrelas em shared** (`levels/gates.ts`): nível N exige o N−1 completado E um
+  total mínimo (4→5★, 7→10★, 10→16★); teste garante que todo gate é atingível.
+- **Fluxo de cenas**: RouterScene decide pela URL (`?level=` → nível; senão mapa). Navegação
+  entre mapa/nível continua por URL (recarrega) — mantém E2E e deep links simples; cenas
+  meta (carreira/transferência/craque) trocam via `scene.start`.
+- **Transferências** (`levels/clubs.ts`): 2 clubes por tier, cosmético no MVP; clube atual em
+  localStorage; tier vem do `/me` quando a API está disponível (senão Amador).
+- **Customização**: cor da camisa + número do craque em localStorage, aplicados na cena.
+- **Áudio procedural WebAudio** (sem assets, sem Howler por ora): osciladores com envelope
+  para clique/chute/passe/gol/falha/perfeito; `unlock()` no primeiro pointerdown de cada
+  cena (regra de gesto do mobile).
+- **Game feel**: slow-motion (0.35×) + zoom 1.12 nos últimos ~160 u de um chute que VAI ser
+  gol (o resultado já é conhecido antes da animação), shake de câmera na falha, rastro de
+  partículas na bola e confete no gol (textura gerada em runtime).
+- **Onboarding**: dicas fixas nos níveis 1–5 + demo de traço fantasma no primeiro acesso ao
+  nível 1 (some no primeiro toque; flag `idol:onboarded`).
+- **Flake conhecida de E2E**: clique disparado no exato frame do shake de falha pode se
+  perder no headless; os specs clicam REWIND com retry (`expect().toPass`). Padrão a seguir
+  em interações logo após efeitos de câmera.
+
+### Checklist "sessão de 15 minutos sem travas" (DoD M6 — validar manualmente)
+
+- [ ] Novo jogador: mapa abre com só o nível 1 liberado; demo + dica explicam o traço
+- [ ] Níveis 1–5 têm dica visível e são completáveis sem instrução externa
+- [ ] Falhar mostra motivo + caminho claro de retry (REWIND); nunca beco sem saída
+- [ ] Gates comunicam o que falta ("precisa de N★ no total")
+- [ ] CARREIRA/TRANSFERIR/CRAQUE abrem e voltam sem estado perdido
+- [ ] Áudio só toca após o primeiro toque (sem warning de autoplay no console)
+- [ ] Status: **pendente em aparelho físico** — flows cobertos por E2E no desktop
+
 ### Checklist de validação manual do traço em aparelho Android físico (obrigatório por marco)
 
 Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no aparelho
@@ -231,7 +265,12 @@ Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no a
   cena Phaser de edição + playtest in-place com o LevelRuntime real, link "jogar no game"
   com payload base64url. DoD: E2E monta nível na UI do editor, exporta, e outro E2E joga um
   nível exportado no game via ?level=custom sem tocar em código. 7 E2E game + 2 E2E editor.
-- ⬜ M6 carreira/polimento · M7 Capacitor.
+- ✅ **M6 — Carreira, UI meta e polimento**: mapa da temporada com gates de estrelas
+  (shared + testes), progresso local best-of, transferências por tier, customização do
+  craque, onboarding (dicas 1–5 + demo no nível 1), áudio WebAudio procedural, game feel
+  (slow-motion no gol, shake na falha, rastro + confete). 2 novos E2E de carreira;
+  9 E2E game + 2 editor no total.
+- ⬜ M7 Capacitor (empacotamento mobile).
 
 ### Notas do M0
 
