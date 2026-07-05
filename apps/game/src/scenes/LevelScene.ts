@@ -16,6 +16,7 @@ import {
   type Point,
   type TouchOutcome,
 } from '@idol/shared';
+import { apiClient } from '../api/ApiClient.js';
 import { DribbleClient, type DribbleSessionState } from '../dribble/DribbleClient.js';
 import { RouletteOverlay } from '../ui/RouletteOverlay.js';
 import '../e2eHook.js';
@@ -118,6 +119,7 @@ export class LevelScene extends Phaser.Scene {
       .setDepth(10);
 
     this.rewindButton = this.makeButton(120, FIELD_HEIGHT - 56, '◀ REWIND', () => this.onRewind());
+    this.makeButton(FIELD_WIDTH - 110, 40, 'CARREIRA', () => this.scene.start('meta'));
     this.dribbleButton = this.makeButton(
       FIELD_WIDTH - 120,
       FIELD_HEIGHT - 56,
@@ -433,6 +435,12 @@ export class LevelScene extends Phaser.Scene {
         `${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}\nToque para o próximo nível`,
       );
       this.state = 'ended';
+      // fãs por desempenho: avaliação = estrelas/3 (best effort; API pode estar off)
+      if (apiClient.available) {
+        void apiClient
+          .ensureSession()
+          .then((ok) => (ok ? apiClient.completeMatch(stars / 3) : null));
+      }
     } else if (touch.phase === 'failed') {
       this.banner.setText(FAIL_LABEL[touch.failReason ?? 'out'] ?? 'FALHOU').setColor('#ff8a80');
       this.subBanner.setText('Use o REWIND para tentar de novo');

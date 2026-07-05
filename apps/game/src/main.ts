@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { FIELD_HEIGHT, FIELD_WIDTH } from '@idol/shared';
 import { LevelScene } from './scenes/LevelScene.js';
+import { MetaScene } from './scenes/MetaScene.js';
 
 new Phaser.Game({
   type: Phaser.AUTO,
@@ -13,5 +14,5 @@ new Phaser.Game({
     width: FIELD_WIDTH,
     height: FIELD_HEIGHT,
   },
-  scene: [LevelScene],
+  scene: [LevelScene, MetaScene],
 });
