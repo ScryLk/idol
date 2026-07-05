@@ -141,6 +141,31 @@ Env: copie `.env.example` para `.env`. A API valida env com Zod no boot e falha 
 - Nível 7 ganhou a primeira oportunidade de drible (`drible-meia-lua`), opcional para o
   objetivo mas útil para treinar o push-your-luck.
 
+## Decisões de arquitetura (M4)
+
+- **Um único `MetaRepo`** (porta de persistência do meta: users, perfis, sponsors, contratos,
+  ledger, fan events) com implementações Prisma e memória — os testes de integração rodam o
+  loop inteiro via HTTP sem banco.
+- **Relógio injetável em tudo** (`nowMs: () => number` no `MetaService` e no `buildApp`):
+  nenhum `Date.now()` nas regras. O teste do DoD "espera" 30min avançando um clock fake.
+- **Carteira**: nenhuma coluna de saldo; `walletBalance = SUM(ledger)`. Pagamentos de
+  patrocínio são `LedgerEntry(sponsor_payout)` com o id do contrato como referência.
+- **Tier do pagamento é avaliado no INÍCIO da partida** (fãs antes dos deltas dela) — decisão
+  registrada; evita que o próprio delta do mercenário rebaixe o pagamento da mesma partida.
+- **Piso de fãs por evento**: os deltas (desempenho, depois cada patrocínio) são aplicados em
+  sequência com `applyFanDelta` (piso 500 em cada passo), todos auditáveis em `FanEvent`.
+- **Vidas**: fórmula `computeLives/consumeLife/nextLifeAtMs` em shared (1 vida/30min, teto 5,
+  consumo com estoque cheio inicia o timer). Fonte de verdade é o cálculo LAZY nas leituras;
+  o job BullMQ (`lives-regen-batch`, a cada 5min) só materializa no banco. Completar partida
+  consome 1 vida (`409 no_lives` sem estoque).
+- **Auth**: JWT via `@fastify/jwt` (claim `sub`), argon2 nos hashes; `/auth/register` cria
+  user + perfil com defaults. Rotas do meta exigem Bearer. A rota do drible (M3) ainda aceita
+  `userId` no corpo — unificar na M6. Dica: nomes de fila BullMQ não aceitam `:`.
+- **Cliente**: `ApiClient` com sessão dev automática (usuário seed) e degradação offline —
+  sem `VITE_API_URL` o gameplay segue e o meta mostra aviso. Ao completar nível, envia
+  `rating = estrelas/3` (best effort). `MetaScene` lista os 15 patrocinadores com trade-off
+  explícito e motivo de bloqueio; toda regra é do servidor.
+
 ### Checklist de validação manual do traço em aparelho Android físico (obrigatório por marco)
 
 Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no aparelho
@@ -176,7 +201,13 @@ Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no a
   (igualdade exata + distribuição ±1.5pp + invariantes), roleta visual com setores reais,
   velocidade por cadeia e hit-stop no Perfeito, integração completa no LevelRuntime com
   rewind devolvendo a oportunidade. 5/5 E2E.
-- ⬜ M4 meta-jogo · M5 editor · M6 carreira/polimento · M7 Capacitor.
+- ✅ **M4 — Meta-jogo**: auth JWT, `/me`, `/sponsors`, `/contracts`, `/gameplay/match`;
+  carteira só por ledger, fãs por eventos com piso, tiers multiplicando pagamentos,
+  contratos de 10 partidas concluindo sozinhos, vidas com regen por timer (lazy + job
+  BullMQ), tela de contratos no cliente com sessão dev automática. DoD: teste de integração
+  HTTP do loop completo (registrar → jogar → subir a Local → assinar mercenário → payout
+  ×1.5 → fãs caindo → contrato completo em 10 → sem vidas → regen) + smoke no Postgres real.
+- ⬜ M5 editor · M6 carreira/polimento · M7 Capacitor.
 
 ### Notas do M0
 
