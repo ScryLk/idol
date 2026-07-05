@@ -33,7 +33,37 @@ jobs:
       - name: Unit tests (com cobertura mínima de 90% em shared)
         run: pnpm --filter @idol/shared test:coverage && pnpm --filter '!@idol/shared' test
 
-  # Integração (Postgres/Redis reais) e E2E Playwright entram nos marcos M1+.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @idol/game exec playwright install --with-deps chromium
+
+      - name: E2E do game (Playwright)
+        run: pnpm --filter @idol/game test:e2e
+
+      - name: E2E do editor (Playwright)
+        run: pnpm --filter @idol/editor test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/game/playwright-report/
+          retention-days: 7
+
   migrations:
     runs-on: ubuntu-latest
     services:

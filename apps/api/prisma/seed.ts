@@ -1,16 +1,29 @@
 /* eslint-disable no-console */
 import { PrismaClient, type FanTierId, type SponsorArchetype } from '@prisma/client';
 import argon2 from 'argon2';
-import { FAN_TIERS, SPONSOR_ARCHETYPES, parseLevelScript, type LevelScript } from '@idol/shared';
+import {
+  FAN_TIERS,
+  SEASON1_LEVELS,
+  SPONSOR_ARCHETYPES,
+  getSeason1Level,
+  parseLevelScript,
+  type LevelScript,
+} from '@idol/shared';
 
 const prisma = new PrismaClient();
 
 /**
- * Gera 20 níveis determinísticos de dificuldade crescente.
- * Todos passam pelo schema Zod LevelScript ANTES de persistir — o seed é
- * também um teste de contrato do formato de nível.
+ * Níveis 1–10: feitos à mão em @idol/shared (SEASON1_LEVELS, com teste de
+ * solvabilidade). Níveis 11–20: gerados proceduralmente até o M5 (editor).
+ * Todos passam pelo schema Zod LevelScript ANTES de persistir.
  */
 function makeLevel(ordinal: number): LevelScript {
+  const handmade = getSeason1Level(ordinal);
+  if (handmade) return parseLevelScript(handmade);
+  return makeGeneratedLevel(ordinal);
+}
+
+function makeGeneratedLevel(ordinal: number): LevelScript {
   const difficulty = Math.min(5, Math.ceil(ordinal / 4));
   const defenders = Array.from({ length: Math.min(4, 1 + Math.floor(ordinal / 5)) }, (_, i) => ({
     id: `zagueiro-${i + 1}`,
@@ -117,7 +130,7 @@ async function main(): Promise<void> {
       },
     });
   }
-  console.log('✓ 20 níveis da temporada 1');
+  console.log(`✓ 20 níveis da temporada 1 (${SEASON1_LEVELS.length} feitos à mão + 10 gerados)`);
 
   // --- 3 patrocinadores por tier (5 tiers × 3 arquétipos) ------------------
   const brandNames: Record<string, Record<string, string>> = {
