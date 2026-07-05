@@ -4,11 +4,61 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IDOL — Editor de Níveis</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        display: flex;
+        height: 100vh;
+        font-family: system-ui, sans-serif;
+        background: #10141a;
+        color: #eceff1;
+      }
+      #sidebar {
+        width: 360px;
+        min-width: 360px;
+        overflow-y: auto;
+        padding: 12px;
+        background: #1a2027;
+        border-right: 2px solid #263238;
+      }
+      #sidebar h1 { font-size: 18px; margin: 4px 0 12px; }
+      #sidebar h2 { font-size: 13px; text-transform: uppercase; color: #90a4ae; margin: 16px 0 6px; }
+      #sidebar label { display: block; font-size: 12px; color: #b0bec5; margin: 6px 0 2px; }
+      #sidebar input, #sidebar select, #sidebar textarea {
+        width: 100%;
+        padding: 6px;
+        background: #10141a;
+        color: #eceff1;
+        border: 1px solid #37474f;
+        border-radius: 4px;
+        font-size: 13px;
+      }
+      #sidebar textarea { font-family: monospace; font-size: 11px; min-height: 120px; }
+      #sidebar button {
+        margin: 3px 2px 3px 0;
+        padding: 8px 10px;
+        min-height: 34px;
+        background: #263238;
+        color: #eceff1;
+        border: 1px solid #455a64;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      #sidebar button.primary { background: #ffd740; color: #1a1a1a; font-weight: 700; }
+      #sidebar button.active { background: #1565c0; border-color: #64b5f6; }
+      #sidebar .errors { color: #ff8a80; font-size: 12px; white-space: pre-wrap; }
+      #sidebar a { color: #80d8ff; font-size: 12px; word-break: break-all; }
+      #canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
+      #canvas-wrap canvas { max-height: 96vh !important; }
+      .row { display: flex; gap: 6px; }
+      .row > * { flex: 1; }
+    </style>
   </head>
   <body>
-    <h1>IDOL — Editor de Níveis</h1>
-    <p>Placeholder do M0. O editor completo chega no M5.</p>
-    <pre id="output"></pre>
+    <aside id="sidebar"></aside>
+    <main id="canvas-wrap"><div id="editor-canvas"></div></main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -74,6 +74,9 @@ importers:
       '@idol/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      phaser:
+        specifier: ^3.90.0
+        version: 3.90.0
       zod:
         specifier: ^3.25.51
         version: 3.25.76
@@ -81,6 +84,9 @@ importers:
       '@idol/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@playwright/test':
+        specifier: ^1.55.0
+        version: 1.61.1
       eslint:
         specifier: ^9.28.0
         version: 9.39.4(jiti@2.7.0)
