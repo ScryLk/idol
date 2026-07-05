@@ -51,8 +51,11 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm --filter @idol/game exec playwright install --with-deps chromium
 
-      - name: E2E (Playwright)
+      - name: E2E do game (Playwright)
         run: pnpm --filter @idol/game test:e2e
+
+      - name: E2E do editor (Playwright)
+        run: pnpm --filter @idol/editor test:e2e
 
       - uses: actions/upload-artifact@v4
         if: failure()

@@ -166,6 +166,25 @@ Env: copie `.env.example` para `.env`. A API valida env com Zod no boot e falha 
   `rating = estrelas/3` (best effort). `MetaScene` lista os 15 patrocinadores com trade-off
   explícito e motivo de bloqueio; toda regra é do servidor.
 
+## Decisões de arquitetura (M5)
+
+- **Ponte editor → game via URL**: `encodeLevelScript/decodeLevelScript` em shared (JSON →
+  UTF-8 → base64url); o game aceita `?level=custom#<payload>` (ou localStorage
+  `idol:custom-level`), SEMPRE validado pelo schema — payload adulterado cai para o nível 1.
+  Motivo: editor (5174) e game (5173) são origens distintas; localStorage não atravessa.
+- **`EditorStore` sem framework** (observável por listeners, `structuredClone` por mutação):
+  draft sempre estrutural, validação Zod no export/import/playtest. `pick()` para seleção por
+  toque, `exportPlayUrl()` gera o link jogável.
+- **Waypoints com timing automático**: t cresce pela distância a 150 u/s (`ROUTE_SPEED`);
+  waypoint 0 nasce na posição do ator com t=0 — rotas sempre passam no refinamento de t
+  estritamente crescente do schema.
+- **Playtest in-place usa o MESMO `LevelRuntime` do game** (passes, objetivos, estrelas,
+  rewind reais). Sem roleta no playtest — o sorteio é do servidor; oportunidades aparecem
+  como marcadores.
+- **Sidebar DOM re-renderiza a cada mutação do store** — simples e correto, mas um clique que
+  corre junto com um re-render pode se perder (padrão: interações E2E esperam o estado via
+  `window.__IDOL_EDITOR__` antes do próximo clique).
+
 ### Checklist de validação manual do traço em aparelho Android físico (obrigatório por marco)
 
 Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no aparelho
@@ -207,7 +226,12 @@ Rodar `pnpm --filter @idol/game dev` e abrir `http://<ip-da-máquina>:5173` no a
   BullMQ), tela de contratos no cliente com sessão dev automática. DoD: teste de integração
   HTTP do loop completo (registrar → jogar → subir a Local → assinar mercenário → payout
   ×1.5 → fãs caindo → contrato completo em 10 → sem vidas → regen) + smoke no Postgres real.
-- ⬜ M5 editor · M6 carreira/polimento · M7 Capacitor.
+- ✅ **M5 — Editor de níveis**: EditorStore testado (posicionar/arrastar atores, rotas com
+  waypoints de timing automático, arcos/zonas, objetivos/estrelas, export/import validado),
+  cena Phaser de edição + playtest in-place com o LevelRuntime real, link "jogar no game"
+  com payload base64url. DoD: E2E monta nível na UI do editor, exporta, e outro E2E joga um
+  nível exportado no game via ?level=custom sem tocar em código. 7 E2E game + 2 E2E editor.
+- ⬜ M6 carreira/polimento · M7 Capacitor.
 
 ### Notas do M0
 
