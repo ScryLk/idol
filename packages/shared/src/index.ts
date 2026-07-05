@@ -13,3 +13,5 @@ export * from './simulation/route.js';
 export * from './simulation/runtime.js';
 export * from './levels/season1.js';
 export * from './levels/codec.js';
+export * from './levels/gates.js';
+export * from './levels/clubs.js';
